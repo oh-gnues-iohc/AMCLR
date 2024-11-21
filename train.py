@@ -4,7 +4,6 @@ import sys
 from dataclasses import dataclass, field
 from typing import Optional
 
-import torch
 from datasets import load_dataset
 from transformers import (
     AutoTokenizer,
@@ -13,14 +12,7 @@ from transformers import (
     HfArgumentParser,
     set_seed,
 )
-import torch_xla.core.xla_model as xm
-import torch_xla.runtime as xr
-
 from transformers.models.electra import ElectraConfig
-
-# Enable SPMD mode execution and compile cache for TPU
-xr.use_spmd()
-xr.initialize_cache("/root/files/tpu_cache", readonly=False)
 
 logger = logging.getLogger(__name__)
 
@@ -106,6 +98,10 @@ def main():
 
     # Train the model
     trainer.train()
+
+def _mp_fn(index):
+    # For xla_spawn (TPUs)
+    main()
 
 
 if __name__ == "__main__":
