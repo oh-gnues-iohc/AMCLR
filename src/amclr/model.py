@@ -3,78 +3,174 @@ import torch
 import torch.nn as nn
 from torch.nn.parallel import DistributedDataParallel as DDP
 from transformers.models.electra.modeling_electra import ElectraForMaskedLM, ElectraForPreTraining, ElectraDiscriminatorPredictions
-from typing import Optional
+from typing import *
 import torch.nn.functional as F
 from torch.autograd import Function
 import torch_xla.core.xla_model as xm
 import pickle
+import collections
+import struct
 
 from transformers.models.electra.modeling_electra import *
 from transformers.modeling_outputs import *
 
 
-def get_rank():
+def new_groups(grouped_ranks: List[List[int]]):
+    return ("tpu", grouped_ranks)
+
+def get_global_world_size():
+    return xm.xrt_world_size()
+
+def get_global_rank():
+    return xm.get_ordinal()
+    
+def _find_my_group_index(grouped_ranks):
+    my_rank = get_global_rank()
+    for i, group in enumerate(grouped_ranks):
+        if my_rank in group:
+            return i
+    raise RuntimeError
+
+def _find_my_group(grouped_ranks):
+    index = _find_my_group_index(grouped_ranks)
+    return grouped_ranks[index]
+
+def get_world_size(group):
+    assert group[0] == "tpu"
+    my_group = _find_my_group(group[1])
+    return len(my_group)
+
+def get_global_group():
+    return new_groups([list(range(get_global_world_size()))])
+
+def _get_rank():
     """Returns the rank of the current TPU replica."""
     return xm.get_ordinal()
 
-def get_world_size():
+def _get_world_size():
     """Returns the total number of TPU replicas."""
     return xm.xrt_world_size()
 
-def all_reduce(tensor, reduce_type="sum"):
-    """
-    Reduces the tensor across all TPU replicas.
-    Args:
-        tensor (torch.Tensor): The tensor to be reduced.
-        reduce_type (str): Type of reduction. Can be 'sum', 'mean', etc.
-    """
-    return xm.all_reduce(reduce_type, [tensor])
 
-def all_gather_list(data, max_size=16384):
-    """
-    Gathers arbitrary data from all TPU replicas into a list.
-    Similar to `xm.all_gather` but for arbitrary Python data.
-    Args:
-        data (Any): Data from the local worker to be gathered on other workers.
-        max_size (int): Maximum size of serialized data in bytes.
-    """
-    SIZE_STORAGE_BYTES = 4  # int32 to encode the payload size
+def get_rank(group):
+    assert group[0] == "tpu"
+    my_group = _find_my_group(group[1])
+    return my_group.index(get_global_rank())
 
+def all_reduce(tensor, group, op="sum"):
+    assert isinstance(group, tuple) and group[0] == "tpu"
+    tensor = [tensor]  # wrap in a list to make xm.all_reduce in-place
+    return xm.all_reduce(op, tensor, groups=group[1])[0]
+
+
+
+def apply_to_sample(f, sample):
+    if hasattr(sample, "__len__") and len(sample) == 0:
+        return {}
+
+    def _apply(x):
+        if torch.is_tensor(x):
+            return f(x)
+        elif isinstance(x, collections.OrderedDict):
+            # OrderedDict has attributes that needs to be preserved
+            od = collections.OrderedDict(
+                (key, _apply(value)) for key, value in x.items()
+            )
+            od.__dict__ = x.__dict__
+            return od
+        elif isinstance(x, dict):
+            return {key: _apply(value) for key, value in x.items()}
+        elif isinstance(x, list):
+            return [_apply(x) for x in x]
+        elif isinstance(x, tuple):
+            return tuple(_apply(x) for x in x)
+        elif isinstance(x, set):
+            return {_apply(x) for x in x}
+        else:
+            return x
+
+    return _apply(sample)
+
+
+def move_to_cpu(sample):
+    def _move_to_cpu(tensor):
+        # PyTorch has poor support for half tensors (float16) on CPU.
+        # Move any such tensors to float32.
+        if tensor.dtype in {torch.bfloat16, torch.float16}:
+            tensor = tensor.to(dtype=torch.float32)
+        return tensor.cpu()
+
+    return apply_to_sample(_move_to_cpu, sample)
+
+def all_gather_list(data, group=None, max_size=16384):
+    """Gathers arbitrary data from all nodes into a list.
+
+    Similar to :func:`~torch.distributed.all_gather` but for arbitrary Python
+    data. Note that *data* must be picklable and any CUDA tensors will be moved
+    to CPU and returned on CPU as well.
+
+    Args:
+        data (Any): data from the local worker to be gathered on other workers
+        group: group of the collective
+        max_size (int, optional): maximum size of the data to be gathered
+            across workers
+    """
+
+    if group is None:
+        group = get_global_group()
+    rank = get_rank(group=group)
+    world_size = get_world_size(group=group)
+
+    buffer_size = max_size * world_size
+    if (
+        not hasattr(all_gather_list, "_buffer")
+        or all_gather_list._buffer.numel() < buffer_size
+    ):
+        all_gather_list._buffer = torch.cuda.ByteTensor(buffer_size)
+        all_gather_list._cpu_buffer = torch.ByteTensor(max_size).pin_memory()
+    buffer = all_gather_list._buffer
+    buffer.zero_()
+    cpu_buffer = all_gather_list._cpu_buffer
+
+    data = move_to_cpu(data)
     enc = pickle.dumps(data)
     enc_size = len(enc)
-
-    if enc_size + SIZE_STORAGE_BYTES > max_size:
+    header_size = 4  # size of header that contains the length of the encoded data
+    size = header_size + enc_size
+    if size > max_size:
         raise ValueError(
-            'encoded data exceeds max_size, this can be fixed by increasing buffer size: {}'.format(enc_size))
+            "encoded data size ({}) exceeds max_size ({})".format(size, max_size)
+        )
 
-    rank = get_rank()
-    world_size = get_world_size()
+    header = struct.pack(">I", enc_size)
+    cpu_buffer[:size] = torch.ByteTensor(list(header + enc))
+    start = rank * max_size
+    buffer[start : start + size].copy_(cpu_buffer[:size])
 
-    # Create a buffer for this replica
-    buffer = torch.zeros(max_size, dtype=torch.uint8, device="cpu")
-    size_bytes = enc_size.to_bytes(SIZE_STORAGE_BYTES, byteorder="big")
-    buffer[:SIZE_STORAGE_BYTES] = torch.tensor(list(size_bytes), dtype=torch.uint8)
-    buffer[SIZE_STORAGE_BYTES: enc_size + SIZE_STORAGE_BYTES] = torch.tensor(list(enc), dtype=torch.uint8)
+    all_reduce(buffer, group=group)
 
-    # Perform all_gather across TPU replicas
-    gathered_buffers = xm.all_gather(buffer)
-
+    buffer = buffer.cpu()
     try:
         result = []
         for i in range(world_size):
-            out_buffer = gathered_buffers[i * max_size: (i + 1) * max_size]
-            size = int.from_bytes(out_buffer[:SIZE_STORAGE_BYTES].tolist(), byteorder="big")
-            if size > 0:
-                result.append(pickle.loads(bytes(out_buffer[SIZE_STORAGE_BYTES: size + SIZE_STORAGE_BYTES].tolist())))
+            out_buffer = buffer[i * max_size : (i + 1) * max_size]
+            (enc_size,) = struct.unpack(">I", bytes(out_buffer[:header_size].tolist()))
+            if enc_size > 0:
+                result.append(
+                    pickle.loads(
+                        bytes(out_buffer[header_size : header_size + enc_size].tolist())
+                    )
+                )
         return result
     except pickle.UnpicklingError:
         raise Exception(
-            'Unable to unpickle data from other replicas. all_gather_list requires all '
-            'replicas to enter the function together, so this error usually indicates '
-            'that the replicas have fallen out of sync somehow. Replicas can fall out of '
-            'sync if one of them runs out of memory, or if there are other conditions '
-            'in your training script that can cause one replica to finish an epoch '
-            'while other replicas are still iterating over their portions of the data.'
+            "Unable to unpickle data from other workers. all_gather_list requires all "
+            "workers to enter the function together, so this error usually indicates "
+            "that the workers have fallen out of sync somehow. Workers can fall out of "
+            "sync if one of them runs out of memory, or if there are other conditions "
+            "in your training script that can cause one worker to finish an epoch "
+            "while other workers are still iterating over their portions of the data. "
+            "Try rerunning with --ddp-backend=legacy_ddp and see if that helps."
         )
 
 
@@ -353,12 +449,11 @@ class AMCLR(ElectraForPreTraining):
         
         
         
-        distributed_world_size = get_world_size()
+        distributed_world_size = _get_world_size()
         
         local_rank = xm.get_ordinal()
         disc_cls_hidden_state = self.cls_representation(discriminator_sequence_output[:, 0, :])
         gen_cls_hidden_state = generator_sequence_output[:, 0, :]
-        print(local_rank, distributed_world_size, gen_cls_hidden_state.shape)
         
         local_positive_idxs = list(range(disc_cls_hidden_state.size(0)))
         
