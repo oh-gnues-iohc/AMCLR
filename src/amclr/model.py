@@ -477,7 +477,6 @@ class AMCLR(ElectraForPreTraining):
             
             all_q_vectors = all_gather(disc_cls_hidden_state.detach())
             all_c_vectors = all_gather(gen_cls_hidden_state.detach())
-            # all_idxs = all_gather(local_positive_idxs.detach())
 
             for i, item in enumerate(zip(all_q_vectors, all_c_vectors)):
                 q_vector, ctx_vectors = item
@@ -497,6 +496,8 @@ class AMCLR(ElectraForPreTraining):
         else:
             global_disc_cls_hidden_state = disc_cls_hidden_state
             global_gen_cls_hidden_state = gen_cls_hidden_state
+            
+        print(global_disc_cls_hidden_state.shape, global_gen_cls_hidden_state.shape, local_rank)
             
         positive_idx_per_question = torch.tensor(list(range(global_disc_cls_hidden_state.size(0)))).to(disc_cls_hidden_state.device)
         
