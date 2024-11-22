@@ -64,7 +64,8 @@ def main():
     set_seed(training_args.seed)
 
     # Load dataset
-    gcs = pafs.GcsFileSystem()
+    storage_options={"project": "tribal-octane-442108-e7"}
+    gcs = pafs.GcsFileSystem(**storage_options)
     data_format = 'ipc'
 
     # PyArrow 데이터셋 생성 (디렉토리 내 모든 파일 로드)
