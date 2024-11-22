@@ -478,9 +478,9 @@ class AMCLR(ElectraForPreTraining):
             positive_idx_per_question = []
             total_ctxs = 0
             
-            all_q_vectors = all_gather(disc_cls_hidden_state)
-            all_c_vectors = all_gather(gen_cls_hidden_state)
-            all_idxs = all_gather(local_positive_idxs)
+            all_q_vectors = all_gather(disc_cls_hidden_state.detach())
+            all_c_vectors = all_gather(gen_cls_hidden_state.detach())
+            all_idxs = all_gather(local_positive_idxs.detach())
 
             for i, item in enumerate(zip(all_q_vectors, all_c_vectors, all_idxs)):
                 q_vector, ctx_vectors, positive_idx = item
