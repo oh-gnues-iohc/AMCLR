@@ -500,7 +500,7 @@ class AMCLR(ElectraForPreTraining):
             global_disc_cls_hidden_state = disc_cls_hidden_state
             global_gen_cls_hidden_state = gen_cls_hidden_state
             positive_idx_per_question = local_positive_idxs
-        
+        print(positive_idx_per_question.shape, local_rank)
         loss = None
         if labels is not None:
             loss_fct = nn.BCEWithLogitsLoss()
@@ -512,6 +512,7 @@ class AMCLR(ElectraForPreTraining):
             else:
                 disc_loss = loss_fct(logits.view(-1, discriminator_sequence_output.shape[1]), labels.float()) * self.l1
             
+            print(disc_loss, local_rank)
                                     
             scores = torch.matmul(global_disc_cls_hidden_state, torch.transpose(global_gen_cls_hidden_state, 0, 1))
 
@@ -522,6 +523,7 @@ class AMCLR(ElectraForPreTraining):
                 torch.tensor(positive_idx_per_question).to(softmax_scores.device),
                 reduction="mean",
             )  * self.l2
+            print(sims_loss, local_rank)
             
         loss = disc_loss + sims_loss
         print(loss, local_rank)
