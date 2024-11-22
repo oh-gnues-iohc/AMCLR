@@ -102,6 +102,19 @@ def move_to_cpu(sample):
 
     return apply_to_sample(_move_to_cpu, sample)
 
+
+def all_gather(tensor, group=None, return_tensor=False):
+    if group is None:
+        group = get_global_group()
+    """Perform an all-gather operation."""
+    result = xm.all_gather(tensor, groups=group[1])
+    world_size = get_world_size(group=group)
+    result = result.view(world_size, *tensor.size())
+    if return_tensor:
+        return result
+    else:
+        return [result[i] for i in range(world_size)]
+
 def all_gather_list(data, group=None, max_size=16384):
     """Gathers arbitrary data from all nodes into a list.
 
@@ -455,28 +468,21 @@ class AMCLR(ElectraForPreTraining):
         disc_cls_hidden_state = self.cls_representation(discriminator_sequence_output[:, 0, :])
         gen_cls_hidden_state = generator_sequence_output[:, 0, :]
         
-        local_positive_idxs = list(range(disc_cls_hidden_state.size(0)))
+        local_positive_idxs = torch.tensor(list(range(disc_cls_hidden_state.size(0))))
         
         if distributed_world_size > 1:
-            q_vector_to_send = torch.empty_like(disc_cls_hidden_state).cpu().copy_(disc_cls_hidden_state).detach_()
-            ctx_vector_to_send = torch.empty_like(gen_cls_hidden_state).cpu().copy_(gen_cls_hidden_state).detach_()
-
-            global_question_ctx_vectors = all_gather_list(
-                [
-                    q_vector_to_send,
-                    ctx_vector_to_send,
-                    local_positive_idxs,
-                ],
-                max_size=200000
-            )
 
             global_disc_cls_hidden_state = []
             global_gen_cls_hidden_state = []
 
             positive_idx_per_question = []
             total_ctxs = 0
+            
+            all_q_vectors = all_gather(disc_cls_hidden_state)
+            all_c_vectors = all_gather(gen_cls_hidden_state)
+            all_idxs = all_gather(local_positive_idxs)
 
-            for i, item in enumerate(global_question_ctx_vectors):
+            for i, item in enumerate(zip(all_q_vectors, all_c_vectors, all_idxs)):
                 q_vector, ctx_vectors, positive_idx = item
                 print(q_vector.shape)
                 print(dd)
