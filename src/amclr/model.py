@@ -513,7 +513,7 @@ class AMCLR(ElectraForPreTraining):
                 disc_loss = loss_fct(logits.view(-1, discriminator_sequence_output.shape[1]), labels.float()) * self.l1
             
                                     
-            scores = torch.matmul(global_disc_cls_hidden_state, torch.transpose(global_gen_cls_hidden_state, 0, 1)) * self.l2
+            scores = torch.matmul(global_disc_cls_hidden_state, torch.transpose(global_gen_cls_hidden_state, 0, 1))
 
             softmax_scores = F.log_softmax(scores, dim=1)
 
@@ -521,7 +521,7 @@ class AMCLR(ElectraForPreTraining):
                 softmax_scores,
                 torch.tensor(positive_idx_per_question).to(softmax_scores.device),
                 reduction="mean",
-            )
+            )  * self.l2
             
             with torch.no_grad():
                 replaced_logits = logits[mask_indices]
