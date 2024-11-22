@@ -133,8 +133,6 @@ def all_gather_list(data, group=None, max_size=16384):
         group = get_global_group()
     rank = get_rank(group=group)
     world_size = get_world_size(group=group)
-    print(world_size, rank)
-    print(dd)
     buffer_size = max_size * world_size
     if (
         not hasattr(all_gather_list, "_buffer")
@@ -464,6 +462,8 @@ class AMCLR(ElectraForPreTraining):
         group = get_global_group()
         distributed_world_size = get_world_size(group)
         local_rank = get_rank(group)
+        print(distributed_world_size, local_rank)
+        print(dd)
         disc_cls_hidden_state = self.cls_representation(discriminator_sequence_output[:, 0, :])
         gen_cls_hidden_state = generator_sequence_output[:, 0, :]
         
