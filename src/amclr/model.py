@@ -475,7 +475,6 @@ class AMCLR(ElectraForPreTraining):
             global_disc_cls_hidden_state = []
             global_gen_cls_hidden_state = []
 
-            positive_idx_per_question = []
             total_ctxs = 0
             
             all_q_vectors = all_gather(disc_cls_hidden_state.detach())
