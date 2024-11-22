@@ -7,7 +7,6 @@ import pyarrow.fs as pafs
 from datasets import Dataset
 from dataclasses import dataclass, field
 from typing import Optional
-import gcsfs
 
 from datasets import load_dataset, load_from_disk
 from transformers import (
@@ -65,8 +64,7 @@ def main():
     set_seed(training_args.seed)
 
     # Load dataset
-    storage_options={"project": "tribal-octane-442108-e7"}
-    gcs = gcsfs.GCSFileSystem(**storage_options)
+    gcs = pafs.GcsFileSystem()
     data_format = 'ipc'
 
     # PyArrow 데이터셋 생성 (디렉토리 내 모든 파일 로드)
