@@ -2,6 +2,7 @@ import logging
 import os
 import sys
 import pyarrow as pa
+import pyarrow.dataset as ds
 import pyarrow.fs as pafs
 from datasets import Dataset
 from dataclasses import dataclass, field
@@ -64,10 +65,19 @@ def main():
 
     # Load dataset
     gcs = pafs.GcsFileSystem()
-    with gcs.open_input_file(data_args.dataset_name) as f:
-        reader = pa.ipc.RecordBatchFileReader(f)
-        table = reader.read_all()
-    # datasets = load_from_disk(data_args.dataset_name)
+    data_format = 'ipc'
+
+    # PyArrow 데이터셋 생성 (디렉토리 내 모든 파일 로드)
+    arrow_dataset = ds.dataset(
+        data_args.dataset_name,
+        filesystem=gcs,
+        format=data_format,
+        partitioning='hive'  # 필요에 따라 파티셔닝 방식 지정
+    )
+
+    # Arrow 테이블로 변환
+    table = arrow_dataset.to_table()
+
     datasets = Dataset(arrow_table=table)
     # Load tokenizer and model configurations
     disc_config_path = f"google/electra-{model_args.model_size}-discriminator"
