@@ -462,8 +462,6 @@ class AMCLR(ElectraForPreTraining):
         group = get_global_group()
         distributed_world_size = get_world_size(group)
         local_rank = get_rank(group)
-        print(distributed_world_size, local_rank)
-        print(dd)
         disc_cls_hidden_state = self.cls_representation(discriminator_sequence_output[:, 0, :])
         gen_cls_hidden_state = generator_sequence_output[:, 0, :]
         
@@ -494,6 +492,8 @@ class AMCLR(ElectraForPreTraining):
             
         positive_idx_per_question = torch.tensor(list(range(global_disc_cls_hidden_state.size(0)))).to(disc_cls_hidden_state.device)
         
+        print(global_gen_cls_hidden_state.shape, local_rank)
+        print(dd)
         loss = None
         if labels is not None:
             loss_fct = nn.BCEWithLogitsLoss()
