@@ -64,21 +64,8 @@ def main():
     set_seed(training_args.seed)
 
     # Load dataset
-    gcs = pafs.GcsFileSystem()
-    data_format = 'ipc'
+    dataset = load_dataset("arrow", data_files=data_args.dataset_name, split='train', cache_dir=None, download_mode="force_redownload")
 
-    # PyArrow 데이터셋 생성 (디렉토리 내 모든 파일 로드)
-    arrow_dataset = ds.dataset(
-        data_args.dataset_name,
-        filesystem=gcs,
-        format=data_format,
-        partitioning='hive'  # 필요에 따라 파티셔닝 방식 지정
-    )
-
-    # Arrow 테이블로 변환
-    table = arrow_dataset.to_table()
-
-    datasets = Dataset(arrow_table=table)
     # Load tokenizer and model configurations
     disc_config_path = f"google/electra-{model_args.model_size}-discriminator"
     gen_config_path = f"google/electra-{model_args.model_size}-generator"
