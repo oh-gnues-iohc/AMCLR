@@ -484,8 +484,6 @@ class AMCLR(ElectraForPreTraining):
 
             for i, item in enumerate(zip(all_q_vectors, all_c_vectors, all_idxs)):
                 q_vector, ctx_vectors, positive_idx = item
-                print(q_vector.shape)
-                print(dd)
                 if i != local_rank:
                     global_disc_cls_hidden_state.append(q_vector.to(disc_cls_hidden_state.device))
                     global_gen_cls_hidden_state.append(ctx_vectors.to(disc_cls_hidden_state.device))
@@ -502,6 +500,9 @@ class AMCLR(ElectraForPreTraining):
             global_disc_cls_hidden_state = disc_cls_hidden_state
             global_gen_cls_hidden_state = gen_cls_hidden_state
             positive_idx_per_question = local_positive_idxs
+        
+        print(global_gen_cls_hidden_state.shape)
+        print(dd)
         
         loss = None
         if labels is not None:
