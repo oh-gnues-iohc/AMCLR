@@ -501,9 +501,6 @@ class AMCLR(ElectraForPreTraining):
             global_gen_cls_hidden_state = gen_cls_hidden_state
             positive_idx_per_question = local_positive_idxs
         
-        print(global_gen_cls_hidden_state.shape)
-        print(dd)
-        
         loss = None
         if labels is not None:
             loss_fct = nn.BCEWithLogitsLoss()
