@@ -495,6 +495,7 @@ class AMCLR(ElectraForPreTraining):
                 total_ctxs += ctx_vectors.size(0)
             global_disc_cls_hidden_state = torch.cat(global_disc_cls_hidden_state, dim=0)
             global_gen_cls_hidden_state = torch.cat(global_gen_cls_hidden_state, dim=0)
+            positive_idx_per_question = torch.cat(positive_idx_per_question, dim=0)
 
         else:
             global_disc_cls_hidden_state = disc_cls_hidden_state
@@ -520,7 +521,7 @@ class AMCLR(ElectraForPreTraining):
 
             sims_loss = F.nll_loss(
                 softmax_scores,
-                torch.tensor(positive_idx_per_question).to(softmax_scores.device),
+                positive_idx_per_question,
                 reduction="mean",
             )  * self.l2
             print(sims_loss, local_rank)
