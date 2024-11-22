@@ -468,7 +468,7 @@ class AMCLR(ElectraForPreTraining):
         disc_cls_hidden_state = self.cls_representation(discriminator_sequence_output[:, 0, :])
         gen_cls_hidden_state = generator_sequence_output[:, 0, :]
         
-        local_positive_idxs = torch.tensor(list(range(disc_cls_hidden_state.size(0)))).to(disc_cls_hidden_state.device)
+        positive_idx_per_question = torch.tensor(list(range(distributed_world_size))).to(disc_cls_hidden_state.device)
         
         if distributed_world_size > 1:
 
@@ -480,27 +480,27 @@ class AMCLR(ElectraForPreTraining):
             
             all_q_vectors = all_gather(disc_cls_hidden_state.detach())
             all_c_vectors = all_gather(gen_cls_hidden_state.detach())
-            all_idxs = all_gather(local_positive_idxs.detach())
+            # all_idxs = all_gather(local_positive_idxs.detach())
 
-            for i, item in enumerate(zip(all_q_vectors, all_c_vectors, all_idxs)):
-                q_vector, ctx_vectors, positive_idx = item
+            for i, item in enumerate(zip(all_q_vectors, all_c_vectors)):
+                q_vector, ctx_vectors = item
                 if i != local_rank:
                     global_disc_cls_hidden_state.append(q_vector.to(disc_cls_hidden_state.device))
                     global_gen_cls_hidden_state.append(ctx_vectors.to(disc_cls_hidden_state.device))
-                    positive_idx_per_question.extend([v + total_ctxs for v in positive_idx])
+                
                 else:
                     global_disc_cls_hidden_state.append(disc_cls_hidden_state)
                     global_gen_cls_hidden_state.append(gen_cls_hidden_state)
-                    positive_idx_per_question.extend([v + total_ctxs for v in local_positive_idxs])
+                
                 total_ctxs += ctx_vectors.size(0)
             global_disc_cls_hidden_state = torch.cat(global_disc_cls_hidden_state, dim=0)
             global_gen_cls_hidden_state = torch.cat(global_gen_cls_hidden_state, dim=0)
-            positive_idx_per_question = torch.cat(positive_idx_per_question, dim=0)
+            
 
         else:
             global_disc_cls_hidden_state = disc_cls_hidden_state
             global_gen_cls_hidden_state = gen_cls_hidden_state
-            positive_idx_per_question = local_positive_idxs
+            
         print(positive_idx_per_question.shape, local_rank)
         loss = None
         if labels is not None:
