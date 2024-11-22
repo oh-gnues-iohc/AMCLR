@@ -133,7 +133,8 @@ def all_gather_list(data, group=None, max_size=16384):
         group = get_global_group()
     rank = get_rank(group=group)
     world_size = get_world_size(group=group)
-
+    print(world_size, rank)
+    print(dd)
     buffer_size = max_size * world_size
     if (
         not hasattr(all_gather_list, "_buffer")
