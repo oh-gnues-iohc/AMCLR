@@ -1,6 +1,9 @@
 import logging
 import os
 import sys
+import pyarrow as pa
+import pyarrow.fs as pafs
+from datasets import Dataset
 from dataclasses import dataclass, field
 from typing import Optional
 
@@ -60,8 +63,12 @@ def main():
     set_seed(training_args.seed)
 
     # Load dataset
-    datasets = load_from_disk(data_args.dataset_name)
-
+    gcs = pafs.GcsFileSystem()
+    with gcs.open_input_file(data_args.dataset_name) as f:
+        reader = pa.ipc.RecordBatchFileReader(f)
+        table = reader.read_all()
+    # datasets = load_from_disk(data_args.dataset_name)
+    datasets = Dataset(arrow_table=table)
     # Load tokenizer and model configurations
     disc_config_path = f"google/electra-{model_args.model_size}-discriminator"
     gen_config_path = f"google/electra-{model_args.model_size}-generator"
