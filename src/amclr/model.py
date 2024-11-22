@@ -127,7 +127,7 @@ def all_gather_list(data, group=None, max_size=16384):
         or all_gather_list._buffer.numel() < buffer_size
     ):
         all_gather_list._buffer = torch.ByteTensor(buffer_size)
-        all_gather_list._cpu_buffer = torch.ByteTensor(max_size).pin_memory()
+        all_gather_list._cpu_buffer = torch.ByteTensor(max_size)
     buffer = all_gather_list._buffer
     buffer.zero_()
     cpu_buffer = all_gather_list._cpu_buffer
