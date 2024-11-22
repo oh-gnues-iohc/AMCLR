@@ -96,8 +96,7 @@ def main():
     trainer = Trainer(
         model=disc,
         args=training_args,
-        train_dataset=datasets,
-        tokenizer=tokenizer,
+        train_dataset=datasets
     )
 
     # Train the model
