@@ -523,14 +523,6 @@ class AMCLR(ElectraForPreTraining):
                 reduction="mean",
             )  * self.l2
             
-            with torch.no_grad():
-                replaced_logits = logits[mask_indices]
-                replaced_labels = labels[mask_indices].float()
-                rtd_logits = (replaced_logits > 0.5).long()
-                rtd_correct = (rtd_logits == replaced_labels).float()
-                self.acc_rtd = rtd_correct.mean().item()
-            
-            
         loss = disc_loss + sims_loss
         
         
