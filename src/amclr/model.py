@@ -468,7 +468,7 @@ class AMCLR(ElectraForPreTraining):
         disc_cls_hidden_state = self.cls_representation(discriminator_sequence_output[:, 0, :])
         gen_cls_hidden_state = generator_sequence_output[:, 0, :]
         
-        local_positive_idxs = torch.tensor(list(range(disc_cls_hidden_state.size(0))))
+        local_positive_idxs = torch.tensor(list(range(disc_cls_hidden_state.size(0)))).to(disc_cls_hidden_state.device)
         
         if distributed_world_size > 1:
 
