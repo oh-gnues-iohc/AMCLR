@@ -354,6 +354,7 @@ class AMCLR(ElectraForPreTraining):
         
         
         distributed_world_size = get_world_size()
+        print(distributed_world_size)
         local_rank = int(os.environ["LOCAL_RANK"])
         disc_cls_hidden_state = self.cls_representation(discriminator_sequence_output[:, 0, :])
         gen_cls_hidden_state = generator_sequence_output[:, 0, :]
