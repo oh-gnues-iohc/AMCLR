@@ -524,7 +524,7 @@ class AMCLR(ElectraForPreTraining):
             )  * self.l2
             
         loss = disc_loss + sims_loss
-        
+        print(loss, local_rank)
         
         output = (None,)
         return ((loss,) + output) if loss is not None else output
