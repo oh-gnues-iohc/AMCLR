@@ -460,11 +460,10 @@ class AMCLR(ElectraForPreTraining):
 
         logits = self.discriminator_predictions(discriminator_sequence_output)
         
-        
-        
-        distributed_world_size = _get_world_size()
-        
-        local_rank = xm.get_ordinal()
+        group = get_global_group()
+        distributed_world_size = get_world_size(group)
+        local_rank = get_rank(group)
+        print(distributed_world_size, local_rank)
         disc_cls_hidden_state = self.cls_representation(discriminator_sequence_output[:, 0, :])
         gen_cls_hidden_state = generator_sequence_output[:, 0, :]
         
@@ -472,8 +471,6 @@ class AMCLR(ElectraForPreTraining):
 
             global_disc_cls_hidden_state = []
             global_gen_cls_hidden_state = []
-
-            total_ctxs = 0
             
             all_q_vectors = all_gather(disc_cls_hidden_state.detach())
             all_c_vectors = all_gather(gen_cls_hidden_state.detach())
@@ -483,16 +480,13 @@ class AMCLR(ElectraForPreTraining):
                 if i != local_rank:
                     global_disc_cls_hidden_state.append(q_vector.to(disc_cls_hidden_state.device))
                     global_gen_cls_hidden_state.append(ctx_vectors.to(disc_cls_hidden_state.device))
-                
                 else:
                     global_disc_cls_hidden_state.append(disc_cls_hidden_state)
                     global_gen_cls_hidden_state.append(gen_cls_hidden_state)
                 
-                total_ctxs += ctx_vectors.size(0)
             global_disc_cls_hidden_state = torch.cat(global_disc_cls_hidden_state, dim=0)
             global_gen_cls_hidden_state = torch.cat(global_gen_cls_hidden_state, dim=0)
             
-
         else:
             global_disc_cls_hidden_state = disc_cls_hidden_state
             global_gen_cls_hidden_state = gen_cls_hidden_state
@@ -528,7 +522,7 @@ class AMCLR(ElectraForPreTraining):
             
         loss = disc_loss + sims_loss
         print(loss, local_rank)
-        
+        print(dd)
         output = (None,)
         return ((loss,) + output) if loss is not None else output
 
