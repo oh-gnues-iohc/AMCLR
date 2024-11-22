@@ -4,7 +4,7 @@ import sys
 from dataclasses import dataclass, field
 from typing import Optional
 
-from datasets import load_dataset
+from datasets import load_dataset, load_from_disk
 from transformers import (
     AutoTokenizer,
     Trainer,
@@ -60,7 +60,7 @@ def main():
     set_seed(training_args.seed)
 
     # Load dataset
-    datasets = load_dataset(data_args.dataset_name)
+    datasets = load_from_disk(data_args.dataset_name)
 
     # Load tokenizer and model configurations
     disc_config_path = f"google/electra-{model_args.model_size}-discriminator"
