@@ -465,7 +465,7 @@ class AMCLR(ElectraForPreTraining):
         disc_cls_hidden_state = self.cls_representation(discriminator_sequence_output[:, 0, :])
         gen_cls_hidden_state = generator_sequence_output[:, 0, :]
         
-        xm.mark_step()
+        # xm.mark_step()
         
         if distributed_world_size > 1:
 

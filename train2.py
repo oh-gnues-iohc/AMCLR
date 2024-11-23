@@ -114,9 +114,6 @@ def train_tpu(rank):
 
     # Initialize the process group
 
-    tokenizer = AutoTokenizer.from_pretrained("bert-base-uncased")
-    
-    
     datasets.set_format("torch")
 
     # Prepare dataloaders
