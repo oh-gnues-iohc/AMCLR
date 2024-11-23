@@ -107,7 +107,7 @@ def all_gather(tensor, group=None, return_tensor=False):
     if group is None:
         group = get_global_group()
     """Perform an all-gather operation."""
-    result = xm.all_gather(tensor, groups=group[1])
+    result = xm.all_gather(tensor, groups=group[1], pin_layout=False)
     world_size = get_world_size(group=group)
     result = result.view(world_size, *tensor.size())
     if return_tensor:
