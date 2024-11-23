@@ -21,6 +21,7 @@ import pyarrow.fs as pafs
 from datasets import Dataset
 from dataclasses import dataclass, field
 from typing import Optional
+import torch_xla.distributed.xla_multiprocessing as xmp
 
 import torch_xla
 import torch_xla.runtime as xr
@@ -181,5 +182,4 @@ def train_tpu(rank):
 
 # Start training with TPU
 if __name__ == "__main__":
-    torch.multiprocessing.set_start_method("fork")
-    torch_xla.distributed.xmp.spawn(train_tpu, start_method="fork")
+    xmp.spawn(train_tpu, args=(), start_method='fork')
