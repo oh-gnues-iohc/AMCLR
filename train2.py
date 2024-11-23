@@ -226,7 +226,7 @@ def main():
         if global_step % training_args.logging_steps == 0:
             # 디바이스 0에서 손실 가져오기
             loss_value = jax_utils.unreplicate(loss)
-            logger.info(f"스텝 {global_step} 손실 {loss_value}")
+            logger.info(f"step {global_step} loss {loss_value}")
         # 체크포인트 저장
         if global_step % training_args.save_steps == 0:
             # 상태 저장
