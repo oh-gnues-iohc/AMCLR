@@ -8,6 +8,10 @@ from datasets import Dataset
 from dataclasses import dataclass, field
 from typing import Optional
 
+import torch_xla
+import torch_xla.runtime as xr
+
+
 from datasets import load_dataset, load_from_disk
 from transformers import (
     AutoTokenizer,
@@ -104,8 +108,9 @@ def main():
 
 def _mp_fn(index):
     # For xla_spawn (TPUs)
+    xr.initialize_cache(f'/tmp/xla_cache_{index}', readonly=False)
     main()
 
 
 if __name__ == "__main__":
-    main()
+    torch_xla.launch(_mp_fn, args=())
