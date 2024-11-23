@@ -1,6 +1,6 @@
 import os
 import sys
-import logging
+import logging as lll
 import numpy as np
 from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, Optional, Tuple
@@ -30,7 +30,7 @@ from src.amclr.model_jax import *
 # Ensure that these are correctly imported from your model code
 # from your_model_file import AMCLRModule, AMCLRMLMModule
 
-logger = logging.getLogger(__name__)
+logger = lll.getLogger(__name__)
 
 @dataclass
 class ModelArguments:
