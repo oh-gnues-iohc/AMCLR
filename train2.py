@@ -154,6 +154,9 @@ def main():
     tx = optax.adamw(
         learning_rate=schedule_fn,
         weight_decay=training_args.weight_decay,
+        b1=training_args.adam_beta1,
+        b2=training_args.adam_beta2,
+        eps=training_args.adam_epsilon,
     )
     # Create train state
     state = train_state.TrainState.create(
