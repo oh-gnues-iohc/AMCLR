@@ -22,6 +22,8 @@ from datasets import Dataset
 from dataclasses import dataclass, field
 from typing import Optional
 import torch_xla.distributed.xla_multiprocessing as xmp
+import torch_xla as xla
+import torch_xla.distributed.xla_backend
 
 import torch_xla
 import torch_xla.runtime as xr
@@ -150,17 +152,17 @@ def train_tpu(rank):
     for batch in itertools.cycle(para_loader):
         if step >= num_training_steps:
             break
+        with xla.step():
+            optimizer.zero_grad()
+            input_ids = batch["input_ids"].to(device)
+            attention_mask = batch["attention_mask"].to(device)
 
-        optimizer.zero_grad()
-        input_ids = batch["input_ids"].to(device)
-        attention_mask = batch["attention_mask"].to(device)
+            loss = model(input_ids, attention_mask=attention_mask)
+            loss.backward()
 
-        loss = model(input_ids, attention_mask=attention_mask)
-        loss.backward()
-
-        xm.optimizer_step(optimizer)
-        scheduler.step()
-        xm.mark_step()
+            xm.optimizer_step(optimizer)
+            scheduler.step()
+            xm.mark_step()
 
         # Log training progress
         if step % 10 == 0 and xm.is_master_ordinal():
