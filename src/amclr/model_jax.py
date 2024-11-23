@@ -2,7 +2,7 @@ import jax
 import jax.numpy as jnp
 from flax import linen as nn
 from transformers import (
-    FlaxElectraConfig,
+    ElectraConfig,
     FlaxElectraForMaskedLM,
     FlaxElectraForPreTraining,
 )
@@ -44,7 +44,7 @@ def grad_multiply(x, lambd=-1.0):
 
 
 class MixtureEncoder(nn.Module):
-    config: FlaxElectraConfig
+    config: ElectraConfig
     grad_detach_layer: Tuple[int] = (4, 6, 8)
     dtype: Any = jnp.float32
 
@@ -87,7 +87,7 @@ class MixtureEncoder(nn.Module):
 
 
 class FlaxMixtureElectraModel(nn.Module):
-    config: FlaxElectraConfig
+    config: ElectraConfig
     grad_detach_layer: Tuple[int] = (4, 6, 8)
     dtype: Any = jnp.float32
 
@@ -130,7 +130,7 @@ class FlaxMixtureElectraModel(nn.Module):
 
 
 class AMCLRMLMModule(nn.Module):
-    config: FlaxElectraConfig
+    config: ElectraConfig
     special_token_ids: Any
     dtype: Any = jnp.float32
 
@@ -222,7 +222,7 @@ class AMCLRMLMModule(nn.Module):
 
 
 class AMCLRModule(nn.Module):
-    config: FlaxElectraConfig
+    config: ElectraConfig
     special_token_ids: Any
     generator: AMCLRMLMModule
     dtype: Any = jnp.float32

@@ -17,7 +17,7 @@ from transformers import (
     HfArgumentParser,
     AutoTokenizer,
     set_seed,
-    FlaxElectraConfig,
+    ElectraConfig,
     TrainingArguments
 )
 
@@ -98,8 +98,8 @@ def main():
     if model_args.model_type == "AMCLR":
         # Initialize generator and discriminator configurations
         gen_config_path = f"google/electra-{model_args.model_size}-generator"
-        gen_config = FlaxElectraConfig.from_pretrained(gen_config_path)
-        disc_config = FlaxElectraConfig.from_pretrained(disc_config_path)
+        gen_config = ElectraConfig.from_pretrained(gen_config_path)
+        disc_config = ElectraConfig.from_pretrained(disc_config_path)
 
         # Initialize models
         gen = AMCLRMLMModule(gen_config, tokenizer.all_special_ids)
