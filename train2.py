@@ -1,46 +1,57 @@
 import os
+import torch
+import torch.nn as nn
+import torch.optim as optim
+import itertools
+import torch_xla
+import torch_xla.core.xla_model as xm
+import torch_xla.distributed.parallel_loader as pl
+import torch_xla.experimental.pjrt_backend  # Required for `xla://` init_method
+import torch_xla.utils.utils as xu
+from torch.nn.parallel import DistributedDataParallel as DDP
+from datasets import load_dataset
+from transformers import AutoTokenizer, AutoModelForSequenceClassification, get_linear_schedule_with_warmup
+from tqdm import tqdm
+import logging
+import os
 import sys
-import logging as lll
-import numpy as np
+import pyarrow as pa
+import pyarrow.dataset as ds
+import pyarrow.fs as pafs
+from datasets import Dataset
 from dataclasses import dataclass, field
-from typing import Any, Callable, Dict, Optional, Tuple
+from typing import Optional
+import torch_xla.distributed.xla_multiprocessing as xmp
 
-import flax
-import flax.linen as nn
-import optax
-from flax import jax_utils
-from flax.training import train_state
+import torch_xla
+import torch_xla.runtime as xr
+
 
 from datasets import load_dataset, load_from_disk
-
 from transformers import (
-    HfArgumentParser,
     AutoTokenizer,
+    Trainer,
+    TrainingArguments,
+    HfArgumentParser,
     set_seed,
-    ElectraConfig,
-    TrainingArguments
 )
+from transformers.models.electra import ElectraConfig
 
-import jax
-import jax.numpy as jnp
-from jax import random
-from src.amclr.model_jax import *
+logger = logging.getLogger(__name__)
 
-# Import your model classes
-# Ensure that these are correctly imported from your model code
-# from your_model_file import AMCLRModule, AMCLRMLMModule
+MODEL_SIZES = ["small", "base", "large"]
+MODEL_TYPES = ["AMCLR", "ELECTRA", "AMOS"]
 
-logger = lll.getLogger(__name__)
 
 @dataclass
 class ModelArguments:
     model_size: Optional[str] = field(
         default=None,
-        metadata={"help": "Model size: small, base, large"},
+        metadata={"help": f"Choose from: {', '.join(MODEL_SIZES)}"},
     )
     model_type: Optional[str] = field(
         default=None,
-        metadata={"help": "Model type: AMCLR, ELECTRA, AMOS"},
+        metadata={"help": f"Choose from: {', '.join(MODEL_TYPES)}"},
     )
 
 
@@ -48,17 +59,18 @@ class ModelArguments:
 class DataTrainingArguments:
     dataset_name: Optional[str] = field(
         default=None,
-        metadata={"help": "The path to the dataset to use (via the datasets library)."},
+        metadata={"help": "The name of the dataset to use (via the datasets library)."},
     )
 
 
-def main():
+def train_tpu(rank):
     # Parse arguments
+    device = xm.xla_device()
+    # torch.distributed.init_process_group('xla', init_method='xla://')
+    torch.manual_seed(42)
+    
     parser = HfArgumentParser((ModelArguments, DataTrainingArguments, TrainingArguments))
-    if len(sys.argv) == 2 and sys.argv[1].endswith(".json"):
-        model_args, data_args, training_args = parser.parse_json_file(json_file=os.path.abspath(sys.argv[1]))
-    else:
-        model_args, data_args, training_args = parser.parse_args_into_dataclasses()
+    model_args, data_args, training_args = parser.parse_args_into_dataclasses()
 
     # Setup logging
     logging.basicConfig(
@@ -67,181 +79,104 @@ def main():
         handlers=[logging.StreamHandler(sys.stdout)],
     )
     logger.setLevel(logging.INFO)
+
+    # Log training parameters
     logger.info(f"Training/evaluation parameters {training_args}")
 
-    # Set random seed
-    set_seed(training_args.seed)
-    jax.distributed.initialize()
-
-    # Get the devices
-    devices = jax.devices()
-    num_devices = len(devices)
-    logger.info(f"Using {num_devices} devices: {devices}")
-
     # Load dataset
-    datasets = load_from_disk(data_args.dataset_name)["train"]
-    # Assume 'text' is the field in your dataset
-    column_names = datasets.column_names
+    datasets = load_from_disk(data_args.dataset_name)
 
-    # Initialize tokenizer
+    # Load tokenizer and model configurations
     disc_config_path = f"google/electra-{model_args.model_size}-discriminator"
+    gen_config_path = f"google/electra-{model_args.model_size}-generator"
+
+    if model_args.model_type == "AMCLR":
+        from src.amclr.model import AMCLR, AMCLRMLM
+        disc_model = AMCLR
+        gen_model = AMCLRMLM
+    else:
+        if model_args.model_type == "AMOS":
+            from src.amclr.model_amos import SimsElectra, SimsMLM
+        else:
+            from src.amclr.model_electra import SimsElectra, SimsMLM
+        disc_model = SimsElectra
+        gen_model = SimsMLM
+
     tokenizer = AutoTokenizer.from_pretrained(disc_config_path)
 
+    # Initialize models
+    gen = gen_model(ElectraConfig.from_pretrained(gen_config_path), tokenizer.all_special_ids)
+    disc = disc_model(ElectraConfig.from_pretrained(disc_config_path), tokenizer.all_special_ids, gen)
 
-    # Convert to numpy arrays
-    train_dataset = datasets
+    # Log model parameters
+    n_params = sum(p.numel() for p in disc.parameters())
+    logger.info(f"Training new model from scratch - Total size={n_params / 2**20:.2f}M params")
 
-    # Compute batch size
-    total_train_batch_size = training_args.per_device_train_batch_size * num_devices
+    # Initialize the process group
 
-    # Initialize model
-    if model_args.model_type == "AMCLR":
-        # Initialize generator and discriminator configurations
-        gen_config_path = f"google/electra-{model_args.model_size}-generator"
-        gen_config = ElectraConfig.from_pretrained(gen_config_path)
-        disc_config = ElectraConfig.from_pretrained(disc_config_path)
+    datasets.set_format("torch")
 
-        # Initialize models
-        gen = AMCLRMLMModule(gen_config, tokenizer.all_special_ids)
-        model = AMCLRModule(disc_config, tokenizer.all_special_ids, gen)
-    else:
-        # Handle other model types
-        raise ValueError(f"Unsupported model type: {model_args.model_type}")
-
-    # Create dummy inputs for initialization
-    dummy_input = tokenizer("Hello, this is a dummy input", return_tensors='np')
-
-    # Initialize model parameters
-    rng = jax.random.PRNGKey(training_args.seed)
-    rng, init_rng = jax.random.split(rng)
-    params = model.init(
-        init_rng,
-        input_ids=dummy_input["input_ids"],
-        attention_mask=dummy_input["attention_mask"],
-        token_type_ids=dummy_input.get("token_type_ids", None),
-        position_ids=None,
-        labels=jnp.array([0]),
-        deterministic=True,
-        rngs={"gumbel": rng},
+    # Prepare dataloaders
+    train_dataloader = torch.utils.data.DataLoader(
+        datasets["train"], batch_size=training_args.per_device_train_batch_size, shuffle=True
     )
+    # Load model
+    model = disc.to(device)
 
-    total_steps = training_args.max_steps
+    # Broadcast parameters for consistency across replicas
+    xm.broadcast_master_param(model)
 
-    # 워밍업 스텝 수 가져오기
-    if hasattr(training_args, 'warmup_steps') and training_args.warmup_steps > 0:
-        warmup_steps = training_args.warmup_steps
-    elif hasattr(training_args, 'warmup_ratio') and training_args.warmup_ratio > 0:
-        warmup_steps = int(training_args.warmup_ratio * total_steps)
-    else:
-        warmup_steps = 0
+    # Wrap model in DDP
+    model = DDP(model, gradient_as_bucket_view=True)
+
+    # Define optimizer, loss, and scheduler
+    num_training_steps = training_args.max_steps  # Max steps
         
-    learning_rate_fn = optax.linear_schedule(
-        init_value=0.0,
-        end_value=training_args.learning_rate,
-        transition_steps=warmup_steps,
-    )
-    decay_schedule_fn = optax.linear_schedule(
-        init_value=training_args.learning_rate,
-        end_value=0.0,
-        transition_steps=total_steps - warmup_steps,
-    )
-    schedule_fn = optax.join_schedules(
-        schedules=[learning_rate_fn, decay_schedule_fn],
-        boundaries=[warmup_steps],
-    )
-
-    # 옵티마이저 생성
-    tx = optax.adamw(
-        learning_rate=schedule_fn,
-        weight_decay=training_args.weight_decay,
-        b1=training_args.adam_beta1,
-        b2=training_args.adam_beta2,
+    optimizer = optim.AdamW(
+        model.parameters(),
+        lr=training_args.learning_rate,
         eps=training_args.adam_epsilon,
+        weight_decay=training_args.weight_decay,
     )
-    # Create train state
-    state = train_state.TrainState.create(
-        apply_fn=model.apply,
-        params=params,
-        tx=tx,
+    scheduler = get_linear_schedule_with_warmup(
+        optimizer, num_warmup_steps=training_args.warmup_steps, num_training_steps=training_args.max_steps
     )
-
-    # Replicate the state across devices
-    state = jax_utils.replicate(state)
-
-    # Prepare the training dataset
-    def data_generator():
-        num_examples = len(train_dataset)
-        indices = np.arange(num_examples)
-        rng_data = np.random.default_rng(training_args.seed)
-        rng_data.shuffle(indices)
-
-        while True:
-            for start_idx in range(0, num_examples, total_train_batch_size):
-                end_idx = start_idx + total_train_batch_size
-                batch_indices = indices[start_idx:end_idx]
-                batch = train_dataset.select(batch_indices)
-                batch = {k: np.array(v) for k, v in batch.items()}
-                # 배치를 샤딩
-                batch = shard(batch)
-                yield batch
-            rng_data.shuffle(indices)
-
-    def shard(xs):
-        """Reshape the batch to have leading dimension equal to the number of devices."""
-        return {k: xs[k].reshape((num_devices, -1) + xs[k].shape[1:]) for k in xs}
-
-    # Define the training step function
-    def train_step(state, batch, rng):
-        def loss_fn(params):
-            rngs = {'gumbel': rng}
-            loss = state.apply_fn(
-                **batch,
-                params=params,
-                deterministic=False,
-                rngs=rngs,
-            )
-            return loss
-
-        grad_fn = jax.value_and_grad(loss_fn)
-        loss, grads = grad_fn(state.params)
-        # 그래디언트를 복제 간에 집계
-        grads = jax.lax.pmean(grads, axis_name='batch')
-        new_state = state.apply_gradients(grads=grads)
-        # 손실을 복제 간에 집계
-        loss = jax.lax.pmean(loss, axis_name='batch')
-        return new_state, loss
-
-    # pmap the train_step function
-    p_train_step = jax.pmap(train_step, axis_name='batch')
-
     # Training loop
-    rngs = jax.random.split(rng, num_devices)
-    global_step = 0
-    batch_iter = data_generator()
+    model.train()
+    para_loader = pl.MpDeviceLoader(train_dataloader, device)
+    step = 0
 
-    while global_step < total_steps:
-        batch = next(batch_iter)
-        # rngs 분할
-        rngs = jax.random.split(rngs.reshape(-1), num_devices)
-        state, loss = p_train_step(state, batch, rngs)
-        global_step += 1
-        # 손실 로깅
-        if global_step % training_args.logging_steps == 0:
-            # 디바이스 0에서 손실 가져오기
-            loss_value = jax_utils.unreplicate(loss)
-            logger.info(f"step {global_step} loss {loss_value}")
-        # 체크포인트 저장
-        if global_step % training_args.save_steps == 0:
-            # 상태 저장
-            # 상태를 unreplicate
-            state_to_save = jax_utils.unreplicate(state)
-            with open(os.path.join(training_args.output_dir, f"checkpoint_{global_step}.ckpt"), "wb") as f:
-                f.write(flax.serialization.to_bytes(state_to_save))
+    # Infinite loop with itertools.cycle
+    for batch in itertools.cycle(para_loader):
+        if step >= num_training_steps:
+            break
 
-    # 최종 모델 저장
-    state_to_save = jax_utils.unreplicate(state)
-    with open(os.path.join(training_args.output_dir, f"final_checkpoint.ckpt"), "wb") as f:
-        f.write(flax.serialization.to_bytes(state_to_save))
+        optimizer.zero_grad()
+        input_ids = batch["input_ids"].to(device)
+        attention_mask = batch["attention_mask"].to(device)
 
+        loss = model(input_ids, attention_mask=attention_mask)
+        loss.backward()
+
+        xm.optimizer_step(optimizer)
+        scheduler.step()
+        xm.mark_step()
+
+        # Log training progress
+        if step % 10 == 0 and xm.is_master_ordinal():
+            tqdm.write(f"Step {step}: Loss = {loss.item()}")
+        if step % training_args.save_steps == 0 and xm.is_master_ordinal():
+            model.module.electra.save_pretrained(f"./output/step-{step}")
+            model.module.generator.electra.save_pretrained(f"./output/step-{step}/gens")
+        step += 1
+
+    # Save model (only on master replica)
+    if xm.is_master_ordinal():
+        os.makedirs("saved_model", exist_ok=True)
+        model.save_pretrained("saved_model")
+        tokenizer.save_pretrained("saved_model")
+
+
+# Start training with TPU
 if __name__ == "__main__":
-    main()
+    torch_xla.launch(train_tpu, args=())
