@@ -66,7 +66,7 @@ class DataTrainingArguments:
 def train_tpu(rank):
     # Parse arguments
     device = xm.xla_device()
-    # torch.distributed.init_process_group('xla', init_method='xla://')
+    torch.distributed.init_process_group('xla', init_method='xla://')
     torch.manual_seed(42)
     
     parser = HfArgumentParser((ModelArguments, DataTrainingArguments, TrainingArguments))
