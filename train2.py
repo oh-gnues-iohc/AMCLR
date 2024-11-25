@@ -166,6 +166,38 @@ def initialize_discriminator(config: ElectraConfig, tokenizer: AutoTokenizer, ge
     discriminator_params = variables_disc['params']
     return discriminator_params
 
+from jax.lax import with_sharding_constraint as _with_sharding_constraint
+from jax.interpreters import pxla
+
+def names_in_current_mesh(*names):
+    """ Check if current mesh axes contain these names. """
+    mesh_axis_names = pxla.thread_resources.env.physical_mesh.axis_names
+    return set(names) <= set(mesh_axis_names)
+
+
+def get_names_from_parition_spec(partition_specs):
+    """ Return axis names from partition specs. """
+    names = set()
+    if isinstance(partition_specs, dict):
+        partition_specs = partition_specs.values()
+    for item in partition_specs:
+        if item is None:
+            continue
+        elif isinstance(item, str):
+            names.add(item)
+        else:
+            names.update(get_names_from_parition_spec(item))
+
+    return list(names)
+def with_sharding_constraint(x, partition_specs):
+    """ A smarter version of with_sharding_constraint that only applies the
+        constraint if the current mesh contains the axes in the partition specs.
+    """
+    axis_names = get_names_from_parition_spec(partition_specs)
+    if names_in_current_mesh(*axis_names):
+        x = _with_sharding_constraint(x, partition_specs)
+    return x
+
 def manual_shard(xs):
     """Helper for pjit to shard a pytree of arrays by global_device_count.
 
@@ -211,8 +243,8 @@ def main():
     # Initialize JAX distributed backend
     jax.distributed.initialize()
     
-    devices = np.array(jax.devices()).reshape((8, 4))
-    mesh = Mesh(devices, ('host', 'core'))
+    devices = np.array(jax.devices()).reshape((32,))
+    mesh = Mesh(devices, ('dp',))
     with mesh:
         # Parse arguments
         parser = HfArgumentParser((ModelArguments, DataTrainingArguments, TrainingArgumentsExtended))
@@ -326,9 +358,9 @@ def main():
         # 파라미터는 모든 데이터 병렬 축('dp')에 복제되어야 하므로 PartitionSpec() 사용
         # 입력 데이터는 'dp' 축을 따라 샤딩됨
         # RNGs도 'dp' 축을 따라 샤딩됨
-        input_sharding = PartitionSpec('host', 'core', None)  # Shard across hosts and cores
-        params_sharding = PartitionSpec()  # Replicate params
-        rng_sharding = PartitionSpec('host', 'core')  # Shard RNGs
+        input_sharding = PartitionSpec()
+        params_sharding = PartitionSpec()  # Replicated
+        rng_sharding = PartitionSpec()
 
         # Define pjit training step
         def train_step(state, batch, rngs):
@@ -348,6 +380,7 @@ def main():
             gumbel_rngs = rngs['gumbel']
             dropout_rng, new_dropout_rng = jax.random.split(dropout_rng)
             gumbel_rngs, new_gumbel_rngs = jax.random.split(gumbel_rngs)
+            batch = with_sharding_constraint(batch, PartitionSpec(("dp",)))
             
             new_rngs  = {
                 'gumbel': new_gumbel_rngs,
@@ -439,7 +472,7 @@ def main():
                 batch = {k: np.stack([sample[k] for sample in samples]) for k in samples[0].keys()}
                 
                 # Shard model inputs across devices
-                model_inputs = shard(batch)
+                model_inputs = manual_shard(batch)
 
                 # Call p_train_step with RNGs
                 state, train_metric, replicated_rngs = p_train_step(
