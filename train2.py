@@ -391,7 +391,7 @@ def main():
             gumbel_rngs = rngs['gumbel']
             dropout_rng, new_dropout_rng = jax.random.split(dropout_rng)
             gumbel_rngs, new_gumbel_rngs = jax.random.split(gumbel_rngs)
-            batch = with_sharding_constraint(batch, PartitionSpec(("dp",)))
+            
             
             new_rngs  = {
                 'gumbel': new_gumbel_rngs,
