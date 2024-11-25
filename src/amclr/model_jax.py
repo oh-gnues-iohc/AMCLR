@@ -305,7 +305,7 @@ class AMCLRModule(nn.Module):
         self,
         input_ids,
         attention_mask,
-        token_type_ids,
+        token_type_ids=None,
         position_ids=None,
         deterministic: bool = True,
         rngs: Dict[str, Any] = None,
