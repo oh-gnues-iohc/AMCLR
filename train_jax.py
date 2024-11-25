@@ -251,26 +251,32 @@ def main():
         )
 
         # Optimizer
-        if training_args.adafactor:
-            optimizer = optax.adafactor(
-                learning_rate=linear_decay_lr_schedule_fn,
-            )
-        else:
-            optimizer = optax.adamw(
-                learning_rate=linear_decay_lr_schedule_fn,
-                b1=training_args.adam_beta1,
-                b2=training_args.adam_beta2,
-                eps=training_args.adam_epsilon,
-                weight_decay=training_args.weight_decay,
-            )
 
         # Initialize model parameters
         rng, params_rng = jax.random.split(rng)
         rngs["params"] = params_rng
-        params = model.init(rngs, input_ids=jnp.ones((1, 1)), attention_mask=jnp.ones((1, 1)), is_training=False)
+        init_rngs = jax_utils.replicate(rngs)
+        
+        def init_model(rng):
+            if training_args.adafactor:
+                optimizer = optax.adafactor(
+                    learning_rate=linear_decay_lr_schedule_fn,
+                )
+            else:
+                optimizer = optax.adamw(
+                    learning_rate=linear_decay_lr_schedule_fn,
+                    b1=training_args.adam_beta1,
+                    b2=training_args.adam_beta2,
+                    eps=training_args.adam_epsilon,
+                    weight_decay=training_args.weight_decay,
+                )
+            params = model.init(rng, input_ids=jnp.ones((1, 1)), attention_mask=jnp.ones((1, 1)), is_training=False)
 
-        # Train state
-        state = train_state.TrainState.create(apply_fn=model.apply, params=params, tx=optimizer)
+            # Train state
+            return train_state.TrainState.create(apply_fn=model.apply, params=params, tx=optimizer)
+        
+        init_func = jax.pmap(init_model, axis_name='dp', donate_argnums=(0,))
+        state = init_func(init_rngs)
 
         # Define training step
         def train_step(state, batch, rngs):

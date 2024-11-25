@@ -384,7 +384,7 @@ def main():
 
         # Define pjit training step
         @partial(jax.pmap, axis_name="dp")
-        def train_step(key, batch, variables, opt_state):
+        def train_step(batch, variables, opt_state, rngs, steps):
             """
             Perform a single training step.
 
@@ -397,6 +397,7 @@ def main():
             Returns:
                 New training state, metrics, updated dropout_rng.
             """
+            params = variables['params']
             # Split dropout RNG
             dropout_rng = rngs['dropout']
             gumbel_rngs = rngs['gumbel']
@@ -408,12 +409,13 @@ def main():
                 'dropout': new_dropout_rng,
             }
 
-            def loss_fn(params):
+            def loss_fn(params, variables):
                 """
                 Defines the loss function by calling the model to compute the loss.
                 """
-                loss = model.apply(
-                    params,
+                variables = variables.copy({'params': params})
+                loss, updates = model.apply(
+                    variables,
                     input_ids=batch['input_ids'],
                     attention_mask=batch['attention_mask'],
                     token_type_ids=batch.get('token_type_ids', None),
@@ -423,27 +425,34 @@ def main():
                     deterministic=False,  # Enable dropout
                     rngs=rngs
                 )
-                return loss
+                variables = variables.copy(updates)
+                return (loss, variables)
 
             # Compute loss and gradients
-            loss, grad = jax.value_and_grad(loss_fn)(state.params)
+            grad_fn = jax.value_and_grad(loss_fn, has_aux=True)
+            (loss, variables), grad = grad_fn(params, variables)
 
             # Sum the loss across devices
             loss = jax.lax.pmean(loss, axis_name='dp')
 
             # Average the gradients
             grad = jax.lax.pmean(grad, axis_name='dp')
+            
+            updates, opt_state = optimizer.update(grad, opt_state, params)
+            params = optax.apply_updates(params, updates)
+            variables = variables.copy({'params': params})
+            
+            batch_stats = jax.lax.pmean(variables['batch_stats'], "device")
+            variables = variables.copy({'batch_stats': batch_stats})
 
-            # Update parameters using optimizer
-            new_state = state.apply_gradients(grads=grad)
 
             # Define metrics
             metrics = {
                 "loss": loss,
-                "learning_rate": linear_decay_lr_schedule_fn(state.step)
+                "learning_rate": linear_decay_lr_schedule_fn(steps)
             }
 
-            return new_state, metrics, rngs
+            return variables, opt_state, metrics, rngs
 
         # Apply pjit with sharding specifications
         p_train_step = pjit(
