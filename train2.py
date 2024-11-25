@@ -33,6 +33,7 @@ from transformers.utils import send_example_telemetry
 from jax.experimental import maps
 from jax.sharding import Mesh, PartitionSpec
 from jax.experimental.pjit import pjit
+from functools import partial
 
 # User-defined model imports
 from src.amclr.model_jax import AMCLRModule, AMCLRMLMModule
@@ -346,10 +347,18 @@ def main():
         # Initialize model parameters
         rng, params_rng = jax.random.split(rng)
         rngs["params"] = params_rng
-        params = model.init(rngs, input_ids=jnp.ones((1, 1)), attention_mask=jnp.ones((1, 1)), is_training=False)
+        # params = model.init(rngs, input_ids=jnp.ones((1, 1)), attention_mask=jnp.ones((1, 1)), is_training=False)
+
+        @jax.pmap
+        def init_step(key):
+            input_ids = jnp.ones([32, 512])
+            attention_mask = jnp.ones([32, 512])
+            variables = model.init(key, input_ids=input_ids, attention_mask=attention_mask, is_training=False)
+            opt_state = optimizer.init(variables['params'])
+            return variables, opt_state
 
         # Replicate parameters across all devices (data parallel replicas)
-        replicated_params = jax_utils.replicate(params)
+        # replicated_params = jax_utils.replicate(params)
 
         # def create_trainstate_from_params(params):
         #     return train_state.TrainState.create(params=params, tx=optimizer, apply_fn=None)
@@ -374,17 +383,19 @@ def main():
         rng_sharding = PartitionSpec()
 
         # Define pjit training step
-        def train_step(state, batch, rngs):
+        @partial(jax.pmap, axis_name="dp")
+        def train_step(key, batch, variables, opt_state):
             """
             Perform a single training step.
 
             Args:
                 state: Current training state.
                 batch: Training data batch.
+                dropout_rng: RNG for dropout.
                 rngs: RNGs for random operations in the model.
 
             Returns:
-                New training state, metrics, updated rngs.
+                New training state, metrics, updated dropout_rng.
             """
             # Split dropout RNG
             dropout_rng = rngs['dropout']
@@ -392,8 +403,7 @@ def main():
             dropout_rng, new_dropout_rng = jax.random.split(dropout_rng)
             gumbel_rngs, new_gumbel_rngs = jax.random.split(gumbel_rngs)
             
-            
-            new_rngs  = {
+            rngs={
                 'gumbel': new_gumbel_rngs,
                 'dropout': new_dropout_rng,
             }
@@ -411,12 +421,21 @@ def main():
                     # labels=batch['labels'],
                     is_training=True,  # Enable training-specific operations
                     deterministic=False,  # Enable dropout
-                    rngs=new_rngs 
+                    rngs=rngs
                 )
                 return loss
 
             # Compute loss and gradients
             loss, grad = jax.value_and_grad(loss_fn)(state.params)
+
+            # Sum the loss across devices
+            loss = jax.lax.pmean(loss, axis_name='dp')
+
+            # Average the gradients
+            grad = jax.lax.pmean(grad, axis_name='dp')
+
+            # Update parameters using optimizer
+            new_state = state.apply_gradients(grads=grad)
 
             # Define metrics
             metrics = {
@@ -424,10 +443,7 @@ def main():
                 "learning_rate": linear_decay_lr_schedule_fn(state.step)
             }
 
-            # Update state
-            new_state = state.apply_gradients(grads=grad)
-
-            return new_state, metrics, new_rngs 
+            return new_state, metrics, rngs
 
         # Apply pjit with sharding specifications
         p_train_step = pjit(
