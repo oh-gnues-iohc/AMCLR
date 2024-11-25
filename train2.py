@@ -180,6 +180,18 @@ def manual_shard(xs):
         lambda x: x.reshape((global_device_count, -1) + x.shape[1:]), xs
     )
 
+def shard_rngs(rngs, global_device_count):
+    """
+    Split RNGs across all devices globally.
+
+    Args:
+        rngs: A dictionary of RNGs to split.
+        global_device_count: Total number of devices.
+
+    Returns:
+        A dictionary of sharded RNGs.
+    """
+    return {k: jax.random.split(v, global_device_count) for k, v in rngs.items()}
 
 def main():
     # Initialize JAX distributed backend
@@ -368,7 +380,8 @@ def main():
         )
 
         # Replicate RNGs across devices
-        replicated_rngs = jax_utils.replicate(rngs)
+        replicated_rngs = shard_rngs(rngs, global_device_count=jax.device_count())
+        replicated_rngs = jax_utils.replicate(replicated_rngs)
 
         # Define save_checkpoint function
         def save_checkpoint(train_state, milestone=False):
