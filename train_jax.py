@@ -31,7 +31,7 @@ from tqdm import tqdm
 from transformers import AutoTokenizer, ElectraConfig, HfArgumentParser, TrainingArguments, set_seed
 from transformers.utils import send_example_telemetry
 from jax.experimental import maps
-
+from jax.sharding import Mesh
 # User-defined model imports
 from src.amclr.model_jax import AMCLRModule, AMCLRMLMModule
 
@@ -161,7 +161,7 @@ def initialize_discriminator(config: ElectraConfig, tokenizer: AutoTokenizer, ge
 def main():
     # Initialize JAX distributed backend
     jax.distributed.initialize()
-    mesh = maps.Mesh(np.array(jax.devices()), ('dp', 'mp'))
+    mesh = Mesh(np.array(jax.devices()), ('dp', 'mp'))
     with mesh:
         # Parse arguments
         parser = HfArgumentParser((ModelArguments, DataTrainingArguments, TrainingArgumentsExtended))
@@ -170,8 +170,6 @@ def main():
         else:
             model_args, data_args, training_args = parser.parse_args_into_dataclasses()
 
-        # Sending telemetry
-        send_example_telemetry("run_mlm", model_args, data_args, framework="flax")
 
         # Check output directory on master node
         host_id = jax.process_index()
