@@ -280,7 +280,7 @@ class AMCLRModule(nn.Module):
 
     def setup(self):
         self.electra = MyModule(self.config, dtype=self.dtype)
-        self.generator = AMCLRMLMModule(self.config2)
+        self.generator = AMCLRMLMModule(self.config2, self.special_token_ids)
         self.cls_representation = nn.Dense(
             self.generator.config.hidden_size,
             dtype=self.dtype,
