@@ -170,8 +170,8 @@ def main():
     # Initialize JAX distributed backend
     jax.distributed.initialize()
     
-    devices = np.array(jax.devices()).reshape((32,))
-    mesh = Mesh(devices, ('dp',))
+    devices = np.array(jax.devices()).reshape((32, 2))
+    mesh = Mesh(devices, ('dp', 'replica'))
     with mesh:
         # Parse arguments
         parser = HfArgumentParser((ModelArguments, DataTrainingArguments, TrainingArgumentsExtended))
@@ -285,9 +285,10 @@ def main():
         # 파라미터는 모든 데이터 병렬 축('dp')에 복제되어야 하므로 PartitionSpec() 사용
         # 입력 데이터는 'dp' 축을 따라 샤딩됨
         # RNGs도 'dp' 축을 따라 샤딩됨
-        input_sharding = PartitionSpec('dp',)
-        params_sharding = PartitionSpec()  # Replicated
-        rng_sharding = PartitionSpec('dp',)
+        input_sharding = PartitionSpec('dp', 'replica', None)
+        params_sharding = PartitionSpec()  # 파라미터는 복제
+        rng_sharding = PartitionSpec('dp', 'replica', None)
+
 
         # Define pjit training step
         def train_step(state, batch, rngs):
