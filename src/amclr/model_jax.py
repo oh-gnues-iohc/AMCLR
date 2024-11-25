@@ -309,6 +309,7 @@ class AMCLRModule(nn.Module):
         position_ids=None,
         deterministic: bool = True,
         rngs: Dict[str, Any] = None,
+        is_training:bool = True,
     ):
         # Generator를 통해 probs, generator_sequence_output, labels를 얻습니다.
         if position_ids is None:
@@ -367,21 +368,23 @@ class AMCLRModule(nn.Module):
             discriminator_sequence_output[:, 0, :]
         )
         gen_cls_hidden_state = generator_sequence_output[:, 0, :]
+        
+        if is_training:
 
-        disc_cls_hidden_state = jax.lax.all_gather(disc_cls_hidden_state, 'dp')
-        gen_cls_hidden_state = jax.lax.all_gather(gen_cls_hidden_state, 'dp')
+            disc_cls_hidden_state = jax.lax.all_gather(disc_cls_hidden_state, 'dp')
+            gen_cls_hidden_state = jax.lax.all_gather(gen_cls_hidden_state, 'dp')
 
-        # Stop gradients from flowing back to representations from other devices
-        def stop_gradient_except_own(x):
-            own_device_index = jax.lax.axis_index('dp')
-            num_devices = x.shape[0]
-            device_indices = jnp.arange(num_devices)
-            mask = device_indices[:, None] != own_device_index  # [num_devices, 1]
-            mask = jnp.expand_dims(mask, axis=-1)  # [num_devices, 1, 1]
-            return jnp.where(mask, jax.lax.stop_gradient(x), x)
+            # Stop gradients from flowing back to representations from other devices
+            def stop_gradient_except_own(x):
+                own_device_index = jax.lax.axis_index('dp')
+                num_devices = x.shape[0]
+                device_indices = jnp.arange(num_devices)
+                mask = device_indices[:, None] != own_device_index  # [num_devices, 1]
+                mask = jnp.expand_dims(mask, axis=-1)  # [num_devices, 1, 1]
+                return jnp.where(mask, jax.lax.stop_gradient(x), x)
 
-        disc_cls_hidden_state = stop_gradient_except_own(disc_cls_hidden_state)
-        gen_cls_hidden_state = stop_gradient_except_own(gen_cls_hidden_state)
+            disc_cls_hidden_state = stop_gradient_except_own(disc_cls_hidden_state)
+            gen_cls_hidden_state = stop_gradient_except_own(gen_cls_hidden_state)
 
         # Contrastive loss computation
         batch_size = disc_cls_hidden_state.shape[1]
