@@ -221,6 +221,57 @@ class AMCLRMLMModule(nn.Module):
         return probs, generator_sequence_output, labels
 
 
+
+class MyModule(nn.Module):
+    config: ElectraConfig
+    dtype: jnp.dtype = jnp.float32  # the dtype of the computation
+    gradient_checkpointing: bool = False
+
+    def setup(self):
+        self.embeddings = FlaxElectraEmbeddings(self.config, dtype=self.dtype)
+        if self.config.embedding_size != self.config.hidden_size:
+            self.embeddings_project = nn.Dense(self.config.hidden_size, dtype=self.dtype)
+        self.encoder = FlaxElectraEncoder(
+            self.config, dtype=self.dtype, gradient_checkpointing=self.gradient_checkpointing
+        )
+
+    def __call__(
+        self,
+        input_ids=None,
+        attention_mask=None,
+        token_type_ids=None,
+        position_ids=None,
+        embeddings = None,
+        head_mask: Optional[np.ndarray] = None,
+        encoder_hidden_states: Optional[jnp.ndarray] = None,
+        encoder_attention_mask: Optional[jnp.ndarray] = None,
+        init_cache: bool = False,
+        deterministic: bool = True,
+        output_attentions: bool = False,
+        output_hidden_states: bool = False,
+        return_dict: bool = True,
+    ):
+        if embeddings is None:
+            embeddings = self.embeddings(
+                input_ids, token_type_ids, position_ids, attention_mask, deterministic=deterministic
+            )
+        if hasattr(self, "embeddings_project"):
+            embeddings = self.embeddings_project(embeddings)
+
+        return self.encoder(
+            embeddings,
+            attention_mask,
+            head_mask=head_mask,
+            deterministic=deterministic,
+            encoder_hidden_states=encoder_hidden_states,
+            encoder_attention_mask=encoder_attention_mask,
+            init_cache=init_cache,
+            output_attentions=output_attentions,
+            output_hidden_states=output_hidden_states,
+            return_dict=return_dict,
+        )
+
+
 class AMCLRModule(nn.Module):
     config: ElectraConfig
     special_token_ids: Any
@@ -228,7 +279,7 @@ class AMCLRModule(nn.Module):
     dtype: Any = jnp.float32
 
     def setup(self):
-        self.electra = FlaxElectraModel(self.config, dtype=self.dtype)
+        self.electra = MyModule(self.config, dtype=self.dtype)
         self.generator = self.generator
         self.cls_representation = nn.Dense(
             self.generator.config.hidden_size,
@@ -283,8 +334,8 @@ class AMCLRModule(nn.Module):
         )
 
         # Discriminator를 통해 출력을 얻습니다.
-        discriminator_outputs = self.electra.encoder(
-            inputs_embeds,
+        discriminator_outputs = self.electra(
+            embeddings=inputs_embeds,
             attention_mask=attention_mask,
             deterministic=deterministic,
             output_hidden_states=True,
