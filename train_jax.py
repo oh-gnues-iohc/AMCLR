@@ -299,7 +299,7 @@ def main():
                     attention_mask=batch['attention_mask'],
                     token_type_ids=batch.get('token_type_ids', None),
                     position_ids=batch.get('position_ids', None),
-                    labels=batch['labels'],
+                    # labels=batch['labels'],
                     deterministic=False,  # Enable dropout
                     rngs=rngs,            # RNGs for random operations
                     params=params,        # Current parameters
