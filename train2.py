@@ -166,24 +166,27 @@ def initialize_discriminator(config: ElectraConfig, tokenizer: AutoTokenizer, ge
     discriminator_params = variables_disc['params']
     return discriminator_params
 
-def manual_shard(batch, num_devices):
+def manual_shard(xs):
+    """Helper for pjit to shard a pytree of arrays by global_device_count.
+
+    Args:
+        xs: a pytree of arrays.
+    Returns:
+        A matching pytree with arrays' leading dimensions sharded by the
+        global device count.
     """
-    데이터를 num_devices 개의 디바이스로 나눕니다.
-    """
-    sharded_batch = {}
-    for key, value in batch.items():
-        # 데이터를 num_devices로 나누기
-        sharded_value = np.array_split(value, num_devices)
-        # 각 샤드 데이터를 JAX 디바이스에 매핑
-        sharded_batch[key] = [jax.device_put(shard, device) for shard, device in zip(sharded_value, jax.devices())]
-    return sharded_batch
+    global_device_count = jax.device_count()
+    return jax.tree_util.tree_map(
+        lambda x: x.reshape((global_device_count, -1) + x.shape[1:]), xs
+    )
+
 
 def main():
     # Initialize JAX distributed backend
     jax.distributed.initialize()
     
-    devices = np.array(jax.devices()).reshape((8,4))
-    mesh = Mesh(devices, ('dp', 'mp'))
+    devices = np.array(jax.devices()).reshape((32,))
+    mesh = Mesh(devices, ('dp',))
     with mesh:
         # Parse arguments
         parser = HfArgumentParser((ModelArguments, DataTrainingArguments, TrainingArgumentsExtended))
@@ -297,9 +300,9 @@ def main():
         # 파라미터는 모든 데이터 병렬 축('dp')에 복제되어야 하므로 PartitionSpec() 사용
         # 입력 데이터는 'dp' 축을 따라 샤딩됨
         # RNGs도 'dp' 축을 따라 샤딩됨
-        input_sharding = PartitionSpec('dp', 'mp', None)
+        input_sharding = PartitionSpec('dp', None, None)
         params_sharding = PartitionSpec()  # Replicated
-        rng_sharding = PartitionSpec('dp', 'mp')
+        rng_sharding = PartitionSpec('dp',)
 
         # Define pjit training step
         def train_step(state, batch, rngs):
@@ -399,7 +402,7 @@ def main():
                 batch = {k: np.stack([sample[k] for sample in samples]) for k in samples[0].keys()}
                 
                 # Shard model inputs across devices
-                model_inputs = shard(batch)
+                model_inputs = manual_shard(batch)
 
                 # Call p_train_step with RNGs
                 state, train_metric, replicated_rngs = p_train_step(
