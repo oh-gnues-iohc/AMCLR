@@ -170,8 +170,8 @@ def main():
     # Initialize JAX distributed backend
     jax.distributed.initialize()
     
-    devices = np.array(jax.devices()).reshape((32, 1))
-    mesh = Mesh(devices, ('dp', 'replica'))
+    devices = np.array(jax.devices()).reshape((32,))
+    mesh = Mesh(devices, ('dp',))
     with mesh:
         # Parse arguments
         parser = HfArgumentParser((ModelArguments, DataTrainingArguments, TrainingArgumentsExtended))
@@ -285,10 +285,9 @@ def main():
         # 파라미터는 모든 데이터 병렬 축('dp')에 복제되어야 하므로 PartitionSpec() 사용
         # 입력 데이터는 'dp' 축을 따라 샤딩됨
         # RNGs도 'dp' 축을 따라 샤딩됨
-        input_sharding = PartitionSpec('dp', 'replica', None)
-        params_sharding = PartitionSpec()  # 파라미터는 복제
-        rng_sharding = PartitionSpec('dp', 'replica', None)
-
+        input_sharding = PartitionSpec('dp',)
+        params_sharding = PartitionSpec()  # Replicated
+        rng_sharding = PartitionSpec('dp',)
 
         # Define pjit training step
         def train_step(state, batch, rngs):
@@ -386,7 +385,10 @@ def main():
                 # Assuming that each sample is a dictionary with necessary keys
                 # Convert list of samples to batch dictionary
                 batch = {k: np.stack([sample[k] for sample in samples]) for k in samples[0].keys()}
-
+                
+                logger.info(
+                    f"{batch['attention_mask'].shape}"
+                )
                 # Shard model inputs across devices
                 model_inputs = shard(batch)
 
