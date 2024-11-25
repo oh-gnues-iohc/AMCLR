@@ -166,6 +166,18 @@ def initialize_discriminator(config: ElectraConfig, tokenizer: AutoTokenizer, ge
     discriminator_params = variables_disc['params']
     return discriminator_params
 
+def manual_shard(batch, num_devices):
+    """
+    데이터를 num_devices 개의 디바이스로 나눕니다.
+    """
+    sharded_batch = {}
+    for key, value in batch.items():
+        # 데이터를 num_devices로 나누기
+        sharded_value = np.array_split(value, num_devices)
+        # 각 샤드 데이터를 JAX 디바이스에 매핑
+        sharded_batch[key] = [jax.device_put(shard, device) for shard, device in zip(sharded_value, jax.devices())]
+    return sharded_batch
+
 def main():
     # Initialize JAX distributed backend
     jax.distributed.initialize()
@@ -387,7 +399,7 @@ def main():
                 batch = {k: np.stack([sample[k] for sample in samples]) for k in samples[0].keys()}
                 
                 # Shard model inputs across devices
-                model_inputs = shard(batch)
+                model_inputs = manual_shard(batch, 32)
 
                 # Call p_train_step with RNGs
                 state, train_metric, replicated_rngs = p_train_step(
