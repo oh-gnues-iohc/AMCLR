@@ -400,11 +400,10 @@ def main():
         
         rng = jax.random.PRNGKey(training_args.seed)
         rngs = {
-            'gumbel': prepare_rngs(jax.random.split(rng, 1)[0], jax.device_count()),
-            'dropout': prepare_rngs(jax.random.split(rng, 1)[1], jax.device_count()),
+            'gumbel': prepare_rngs(jax.random.split(rng, 1)[0], jax.device_count()),  # Unique RNG for gumbel
+            'dropout': prepare_rngs(jax.random.split(rng, 1)[1], jax.device_count()),  # Unique RNG for dropout
         }
-        replicated_rngs = jax_utils.replicate(rngs)
-        print(replicated_rngs["dropout"].shape)
+        replicated_rngs = rngs
 
         # Define save_checkpoint function
         def save_checkpoint(train_state, milestone=False):
