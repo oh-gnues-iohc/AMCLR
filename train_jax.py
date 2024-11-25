@@ -227,8 +227,8 @@ def main():
 
         # Initialize models based on model_type
         if model_args.model_type == "AMCLR":
-            gen = AMCLRMLMModule(ElectraConfig.from_pretrained(gen_config_path), tokenizer.all_special_ids)
-            model = AMCLRModule(ElectraConfig.from_pretrained(disc_config_path), tokenizer.all_special_ids, gen)
+            # gen = AMCLRMLMModule(, tokenizer.all_special_ids)
+            model = AMCLRModule(ElectraConfig.from_pretrained(disc_config_path), ElectraConfig.from_pretrained(gen_config_path), tokenizer.all_special_ids)
         else:
             raise NotImplementedError(f"Model type {model_args.model_type} is not implemented.")
 

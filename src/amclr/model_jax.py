@@ -274,13 +274,13 @@ class MyModule(nn.Module):
 
 class AMCLRModule(nn.Module):
     config: ElectraConfig
+    config2: ElectraConfig
     special_token_ids: Any
-    generator: AMCLRMLMModule
     dtype: Any = jnp.float32
 
     def setup(self):
         self.electra = MyModule(self.config, dtype=self.dtype)
-        self.generator = self.generator
+        self.generator = AMCLRMLMModule(self.config2)
         self.cls_representation = nn.Dense(
             self.generator.config.hidden_size,
             dtype=self.dtype,
@@ -371,7 +371,7 @@ class AMCLRModule(nn.Module):
         global_batch_size = disc_cls_hidden_state.shape[0] * batch_size
         disc_cls_hidden_state = disc_cls_hidden_state.reshape(global_batch_size, -1)
         gen_cls_hidden_state = gen_cls_hidden_state.reshape(global_batch_size, -1)
-
+        print(global_batch_size)
         scores = jnp.matmul(
             disc_cls_hidden_state, gen_cls_hidden_state.T
         )  # [batch_size, batch_size]
