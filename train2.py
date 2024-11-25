@@ -170,9 +170,6 @@ def main():
     # Initialize JAX distributed backend
     jax.distributed.initialize()
     
-    # TPU v4-64는 일반적으로 64개의 코어을 가지고 있습니다.
-    # 메쉬를 정의할 때 dp(데이터 병렬)과 mp(모델 병렬)의 차원을 신중하게 선택해야 합니다.
-    # 여기서는 반드시 (32,) 메쉬를 사용하여 32개의 독립적인 데이터 병렬 복제본을 만듭니다.
     devices = np.array(jax.devices()).reshape((32,))
     mesh = Mesh(devices, ('dp',))
     
@@ -291,9 +288,9 @@ def main():
         # 파라미터는 모든 데이터 병렬 축('dp')에 복제되어야 하므로 PartitionSpec() 사용
         # 입력 데이터는 'dp' 축을 따라 샤딩됨
         # RNGs도 'dp' 축을 따라 샤딩됨
-        input_sharding = PartitionSpec('dp', None)
+        input_sharding = PartitionSpec('dp', None, None)
         params_sharding = PartitionSpec()  # Replicated
-        rng_sharding = PartitionSpec('dp', None)
+        rng_sharding = PartitionSpec('dp', None, None)
 
         # Define pjit training step
         def train_step(state, batch, rngs):
@@ -380,15 +377,8 @@ def main():
                 json.dump(metadata, f)
             logger.info(f"Saved checkpoint at step {step}")
 
-        # 데이터셋 로드 및 배칭 최적화 적용
-        # 기존의 샘플 인덱스 기반 배칭 방식을 대체
-        # 배치 단위로 데이터를 사전 샤딩하여 효율성을 높임
-        
         train_samples_idx = np.random.permutation(np.arange(len(train_dataset)))
         train_batch_idx = generate_batch_splits(train_samples_idx, global_train_batch_size)
-        # train_dataset = train_dataset.shuffle(seed=training_args.seed).batch(global_train_batch_size, drop_remainder=True)
-        # train_dataloader = get_sharded_batches(train_dataset, global_train_batch_size)
-
         # Training loop
         with tqdm(total=num_steps, desc=f"Training Steps") as pbar:
             for batch_idx in tqdm(train_batch_idx, desc="Training...", position=1, leave=False, disable=(host_id != 0)):
