@@ -303,6 +303,10 @@ def main():
                     # labels=batch['labels'],
                     is_training=True,  # Enable training-specific operations
                     deterministic=False,  # Enable dropout
+                    rngs={
+                        'gumbel': rngs['gumbel'],
+                        'dropout': dropout_rng,
+                    },        # RNGs for random operations
                 )
                 return loss
 
@@ -393,7 +397,7 @@ def main():
                     # Update RNGs
                     dropout_rngs = new_dropout_rng
                     rngs = {'gumbel': jax.random.split(jax_utils.unreplicate(rngs['gumbel']), jax.local_device_count())}
-                    rngs = jax_utils.replicate(rngs)
+                    # rngs = jax_utils.replicate(rngs)
     
                     # Update step counter
                     current_step += 1
