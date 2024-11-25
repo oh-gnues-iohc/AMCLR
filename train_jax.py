@@ -294,8 +294,7 @@ def main():
                 """
                 Defines the loss function by calling the model to compute the loss.
                 """
-                print(batch['input_ids'])
-                loss = state.apply_fn(
+                loss = state.apply(
                     params,
                     input_ids=batch['input_ids'],
                     attention_mask=batch['attention_mask'],
