@@ -285,7 +285,7 @@ def main():
         # 파라미터는 모든 데이터 병렬 축('dp')에 복제되어야 하므로 PartitionSpec() 사용
         # 입력 데이터는 'dp' 축을 따라 샤딩됨
         # RNGs도 'dp' 축을 따라 샤딩됨
-        input_sharding = PartitionSpec('dp',)
+        input_sharding = PartitionSpec('dp', None, None)
         params_sharding = PartitionSpec()  # Replicated
         rng_sharding = PartitionSpec('dp',)
 
@@ -348,7 +348,7 @@ def main():
         p_train_step = pjit(
             train_step,
             in_shardings=(params_sharding, input_sharding, rng_sharding),
-            out_shardings=(params_sharding, input_sharding, rng_sharding),
+            out_shardings=(params_sharding, None, None),
             donate_argnums=(0,)
         )
 
@@ -386,9 +386,6 @@ def main():
                 # Convert list of samples to batch dictionary
                 batch = {k: np.stack([sample[k] for sample in samples]) for k in samples[0].keys()}
                 
-                logger.info(
-                    f"{batch['attention_mask'].shape}"
-                )
                 # Shard model inputs across devices
                 model_inputs = shard(batch)
 
