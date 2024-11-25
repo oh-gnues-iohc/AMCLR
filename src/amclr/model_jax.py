@@ -193,7 +193,10 @@ class AMCLRMLMModule(nn.Module):
         masked_scores = jnp.where(invalid_tokens, -jnp.inf, scores)
 
         # Gumbel Softmax를 사용하여 토큰을 선택합니다.
-        rng_scores, rng_tokens = jax.random.split(rngs["gumbel"], 2)
+        if rngs is not None:
+            rng_scores, rng_tokens = jax.random.split(rngs["gumbel"], 2)
+        else:
+            rng_scores, rng_tokens = None, None
         y_soft = gumbel_softmax(
             masked_scores, tau=1.0, hard=False, axis=-1, rng=rng_scores
         )

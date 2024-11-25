@@ -217,7 +217,7 @@ def main():
         gumbel_rngs = jax.random.split(init_rng, jax.local_device_count())
 
         # Create rngs dictionary
-        rngs = {'gumbel': gumbel_rngs, 'dropout': dropout_rngs}
+        rngs = {'gumbel': gumbel_rngs}
 
         # Load tokenizer
         disc_config_path = f"google/electra-{model_args.model_size}-discriminator"
@@ -268,8 +268,8 @@ def main():
 
         # Initialize model parameters
         rng, params_rng = jax.random.split(rng)
-        rngs["params"] = params_rng
-        params = model.init(rngs, input_ids=jnp.ones((1, 1)), attention_mask=jnp.ones((1, 1)), is_training=False)
+        # rngs["params"] = params_rng
+        params = model.init(params_rng, input_ids=jnp.ones((1, 1)), attention_mask=jnp.ones((1, 1)), is_training=False)
 
         # Train state
         state = train_state.TrainState.create(apply_fn=model.apply, params=params, tx=optimizer)
