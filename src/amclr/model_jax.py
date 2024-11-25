@@ -335,12 +335,7 @@ class AMCLRModule(nn.Module):
         probs = grad_multiply(probs, -1.0)
 
         # 입력 임베딩을 얻습니다.
-        inputs_embeds = self.electra.embeddings(
-            input_ids=input_ids,
-            token_type_ids=token_type_ids,
-            position_ids=position_ids,
-            attention_mask=attention_mask,
-        )
+        inputs_embeds = self.electra.embeddings.word_embeddings(input_ids.astype("i4"))
 
         # 대체된 임베딩을 계산합니다.
         generator_embeddings = self.electra.embeddings.word_embeddings.embedding
@@ -354,8 +349,11 @@ class AMCLRModule(nn.Module):
 
         # Discriminator를 통해 출력을 얻습니다.
         discriminator_outputs = self.electra(
-            embeddings=inputs_embeds,
+            input_ids=None,
             attention_mask=attention_mask,
+            token_type_ids=token_type_ids,
+            position_ids=position_ids,
+            embeddings = inputs_embeds,
             deterministic=deterministic,
             output_hidden_states=True,
             return_dict=True,
