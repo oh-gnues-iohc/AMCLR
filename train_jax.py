@@ -161,6 +161,7 @@ def initialize_discriminator(config: ElectraConfig, tokenizer: AutoTokenizer, ge
 def main():
     # Initialize JAX distributed backend
     jax.distributed.initialize()
+    print(len(jax.devices()))
     mesh = Mesh(np.array(jax.devices()), ('dp', 'mp'))
     with mesh:
         # Parse arguments
