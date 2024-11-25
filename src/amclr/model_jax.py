@@ -139,7 +139,7 @@ class AMCLRMLMModule(nn.Module):
         #     self.config, grad_detach_layer=(4, 6, 8), dtype=self.dtype
         # )
         self.electra = FlaxElectraModule(
-            config=self.config, dtype=self.dtype, gradient_checkpointing=self.gradient_checkpointing
+            config=self.config, dtype=self.dtype
         )
         self.generator_predictions = FlaxElectraGeneratorPredictions(
             self.config, dtype=self.dtype
