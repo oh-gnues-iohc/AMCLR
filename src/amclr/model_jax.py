@@ -306,7 +306,7 @@ class AMCLRModule(nn.Module):
         input_ids,
         attention_mask,
         token_type_ids,
-        position_ids,
+        position_ids=None,
         deterministic: bool = True,
         rngs: Dict[str, Any] = None,
     ):
@@ -319,6 +319,9 @@ class AMCLRModule(nn.Module):
                 jnp.arange(seq_length, dtype=jnp.int32), (batch_size, seq_length)
             )
             
+        if token_type_ids is None:
+            # 일반적으로 single sequence의 경우, 모든 token_type_ids는 0
+            token_type_ids = jnp.zeros_like(input_ids)
         probs, generator_sequence_output, labels = self.generator(
             input_ids,
             attention_mask,
