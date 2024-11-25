@@ -295,6 +295,7 @@ def main():
                 Defines the loss function by calling the model to compute the loss.
                 """
                 loss = state.apply_fn(
+                    params,
                     input_ids=batch['input_ids'],
                     attention_mask=batch['attention_mask'],
                     token_type_ids=batch.get('token_type_ids', None),
@@ -303,7 +304,6 @@ def main():
                     is_training=True,  # Enable training-specific operations
                     deterministic=False,  # Enable dropout
                     rngs=rngs,            # RNGs for random operations
-                    params=params,        # Current parameters
                 )
                 return loss
 
