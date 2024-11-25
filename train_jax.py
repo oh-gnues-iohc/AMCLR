@@ -390,7 +390,7 @@ def main():
                     # Shard model inputs across devices
                     model_inputs = shard(batch)
                     logger.info(
-                        f"{batch['attention_mask'].shape}"
+                        f"{model_inputs['attention_mask'].shape}"
                     )
     
                     # Call p_train_step with RNGs
