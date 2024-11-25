@@ -161,8 +161,10 @@ def initialize_discriminator(config: ElectraConfig, tokenizer: AutoTokenizer, ge
 def main():
     # Initialize JAX distributed backend
     jax.distributed.initialize()
-    print(len(jax.devices()))
-    mesh = Mesh(np.array(jax.devices()), ('dp', 'mp'))
+    
+    devices = np.array(jax.devices()).reshape((8, 4))
+
+    mesh = Mesh(devices, ('dp', 'mp'))
     with mesh:
         # Parse arguments
         parser = HfArgumentParser((ModelArguments, DataTrainingArguments, TrainingArgumentsExtended))
