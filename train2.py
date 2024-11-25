@@ -383,14 +383,23 @@ def main():
         # 데이터셋 로드 및 배칭 최적화 적용
         # 기존의 샘플 인덱스 기반 배칭 방식을 대체
         # 배치 단위로 데이터를 사전 샤딩하여 효율성을 높임
-        train_dataset = train_dataset.shuffle(seed=training_args.seed).batch(global_train_batch_size, drop_remainder=True)
-        train_dataloader = get_sharded_batches(train_dataset, global_train_batch_size)
+        
+        train_samples_idx = np.random.permutation(np.arange(len(train_dataset)))
+        train_batch_idx = generate_batch_splits(train_samples_idx, global_train_batch_size)
+        # train_dataset = train_dataset.shuffle(seed=training_args.seed).batch(global_train_batch_size, drop_remainder=True)
+        # train_dataloader = get_sharded_batches(train_dataset, global_train_batch_size)
 
         # Training loop
         with tqdm(total=num_steps, desc=f"Training Steps") as pbar:
-            for batch in tqdm(train_dataloader, desc="Training...", position=1, leave=False, disable=(host_id != 0)):
+            for batch_idx in tqdm(train_batch_idx, desc="Training...", position=1, leave=False, disable=(host_id != 0)):
                 # Shard model inputs across devices
-                model_inputs = batch  # 이미 shard된 배치이므로 추가 샤딩 불필요
+                samples = [train_dataset[int(idx)] for idx in batch_idx]
+                # Assuming that each sample is a dictionary with necessary keys
+                # Convert list of samples to batch dictionary
+                batch = {k: np.stack([sample[k] for sample in samples]) for k in samples[0].keys()}
+
+                # Shard model inputs across devices
+                model_inputs = shard(batch)
 
                 # Call p_train_step with RNGs
                 state, train_metric, replicated_rngs = p_train_step(
