@@ -1,49 +1,48 @@
-import os
-import torch
-import torch.nn as nn
-import torch.optim as optim
-import itertools
-import torch_xla
-import torch_xla.core.xla_model as xm
-import torch_xla.distributed.parallel_loader as pl
-import torch_xla.experimental.pjrt_backend  # Required for `xla://` init_method
-import torch_xla.utils.utils as xu
-from torch.nn.parallel import DistributedDataParallel as DDP
-from datasets import load_dataset
-from transformers import AutoTokenizer, AutoModelForSequenceClassification, get_linear_schedule_with_warmup
-from tqdm import tqdm
+#!/usr/bin/env python
+# coding=utf-8
+
+"""
+Fine-tuning library models for masked language modeling with whole word masking on a
+text file or a dataset using JAX/Flax on a TPU v4-64 cluster.
+"""
+
+import json
 import logging
+import math
 import os
 import sys
-import pyarrow as pa
-import pyarrow.dataset as ds
-import pyarrow.fs as pafs
-from datasets import Dataset
-from dataclasses import dataclass, field
-from typing import Optional
-import torch_xla.distributed.xla_multiprocessing as xmp
-import torch_xla as xla
-import torch_xla.distributed.xla_backend
+import time
+from dataclasses import asdict, dataclass, field
+from enum import Enum
+from itertools import chain
+from pathlib import Path
+from typing import Any, Dict, List, Optional, Tuple
 
-import torch_xla
-import torch_xla.runtime as xr
-
-
+import flax
+import jax
+import jax.numpy as jnp
+import numpy as np
+import optax
 from datasets import load_dataset, load_from_disk
-from transformers import (
-    AutoTokenizer,
-    Trainer,
-    TrainingArguments,
-    HfArgumentParser,
-    set_seed,
-)
-from transformers.models.electra import ElectraConfig
+from flax import jax_utils, traverse_util
+from flax.training import train_state
+from flax.training.common_utils import get_metrics, onehot, shard
+from tqdm import tqdm
+from transformers import AutoTokenizer, ElectraConfig, HfArgumentParser, TrainingArguments, set_seed
+from transformers.utils import send_example_telemetry
+from jax.experimental import maps
+from jax.sharding import Mesh, PartitionSpec
+from jax.experimental.pjit import pjit
 
-logger = logging.getLogger(__name__)
+# User-defined model imports
+from src.amclr.model_jax import AMCLRModule, AMCLRMLMModule
 
+# Import wandb for logging
+import wandb
+
+# Model sizes and types
 MODEL_SIZES = ["small", "base", "large"]
 MODEL_TYPES = ["AMCLR", "ELECTRA", "AMOS"]
-
 
 @dataclass
 class ModelArguments:
@@ -56,7 +55,6 @@ class ModelArguments:
         metadata={"help": f"Choose from: {', '.join(MODEL_TYPES)}"},
     )
 
-
 @dataclass
 class DataTrainingArguments:
     dataset_name: Optional[str] = field(
@@ -64,121 +62,376 @@ class DataTrainingArguments:
         metadata={"help": "The name of the dataset to use (via the datasets library)."},
     )
 
+@dataclass
+class TrainingArgumentsExtended(TrainingArguments):
+    # You can define additional training arguments here if needed.
+    pass
 
-def train_tpu(rank):
-    # Parse arguments
-    device = xm.xla_device()
-    torch.distributed.init_process_group('xla', init_method='xla://')
-    torch.manual_seed(42)
-    
-    parser = HfArgumentParser((ModelArguments, DataTrainingArguments, TrainingArguments))
-    model_args, data_args, training_args = parser.parse_args_into_dataclasses()
-
-    # Setup logging
-    logging.basicConfig(
-        format="%(asctime)s - %(levelname)s - %(name)s - %(message)s",
-        datefmt="%m/%d/%Y %H:%M:%S",
-        handlers=[logging.StreamHandler(sys.stdout)],
-    )
-    logger.setLevel(logging.INFO)
-
-    # Log training parameters
-    logger.info(f"Training/evaluation parameters {training_args}")
-
-    # Load dataset
-    datasets = load_from_disk(data_args.dataset_name)
-
-    # Load tokenizer and model configurations
-    disc_config_path = f"google/electra-{model_args.model_size}-discriminator"
-    gen_config_path = f"google/electra-{model_args.model_size}-generator"
-
-    if model_args.model_type == "AMCLR":
-        from src.amclr.model import AMCLR, AMCLRMLM
-        disc_model = AMCLR
-        gen_model = AMCLRMLM
+def generate_batch_splits(samples_idx: np.ndarray, batch_size: int, drop_last=True) -> np.ndarray:
+    """Generate batches of data for a specified batch size from sample indices."""
+    num_samples = len(samples_idx)
+    if drop_last:
+        samples_to_remove = num_samples % batch_size
+        if samples_to_remove != 0:
+            samples_idx = samples_idx[:-samples_to_remove]
+        sections_split = num_samples // batch_size
+        samples_idx = samples_idx.reshape((sections_split, batch_size))
     else:
-        if model_args.model_type == "AMOS":
-            from src.amclr.model_amos import SimsElectra, SimsMLM
+        sections_split = math.ceil(num_samples / batch_size)
+        samples_idx = np.array_split(samples_idx, sections_split)
+    return samples_idx
+
+def get_sharded_batches(dataset, batch_size):
+    """
+    효율적인 데이터 로딩을 위해 사전 샤딩된 배치를 생성하는 제너레이터 함수입니다.
+    """
+    for batch in dataset:
+        # 각 배치의 데이터를 NumPy 배열로 변환하고 샤딩
+        yield shard({k: np.array(v) for k, v in batch.items()})
+
+def initialize_generator(config: ElectraConfig, tokenizer: AutoTokenizer, rng: jax.random.PRNGKey) -> Dict[str, Any]:
+    """
+    생성자(Generator) 모듈의 파라미터를 초기화하는 함수입니다.
+    """
+    generator = AMCLRMLMModule(
+        config=config,
+        special_token_ids=tokenizer.all_special_ids,
+        dtype=jnp.float32
+    )
+    
+    # 예제 입력 데이터 생성
+    batch_size = 1
+    seq_length = 128
+    input_ids = jnp.ones((batch_size, seq_length), dtype=jnp.int32)
+    attention_mask = jnp.ones((batch_size, seq_length), dtype=jnp.int32)
+    token_type_ids = jnp.zeros((batch_size, seq_length), dtype=jnp.int32)
+    position_ids = jnp.arange(seq_length)[None, :]
+    
+    # RNG 딕셔너리 생성
+    rngs_gen = {
+        "gumbel": jax.random.split(rng, 2)
+    }
+    
+    # 생성자 파라미터 초기화
+    variables_gen = generator.init(
+        rng,
+        input_ids=input_ids,
+        attention_mask=attention_mask,
+        token_type_ids=token_type_ids,
+        position_ids=position_ids,
+        deterministic=True,
+        rngs=rngs_gen
+    )
+    
+    generator_params = variables_gen['params']
+    return generator_params
+
+def initialize_discriminator(config: ElectraConfig, tokenizer: AutoTokenizer, generator: AMCLRMLMModule, rng: jax.random.PRNGKey) -> Dict[str, Any]:
+    """
+    판별자(Discriminator) 모듈의 파라미터를 초기화하는 함수입니다.
+    """
+    discriminator = AMCLRModule(
+        config=config,
+        special_token_ids=tokenizer.all_special_ids,
+        generator=generator,
+        dtype=jnp.float32
+    )
+    
+    # 예제 입력 데이터 생성
+    batch_size = 1
+    seq_length = 128
+    input_ids = jnp.ones((batch_size, seq_length), dtype=jnp.int32)
+    attention_mask = jnp.ones((batch_size, seq_length), dtype=jnp.int32)
+    token_type_ids = jnp.zeros((batch_size, seq_length), dtype=jnp.int32)
+    position_ids = jnp.arange(seq_length)[None, :]
+    labels = jnp.ones((batch_size, seq_length), dtype=jnp.int32)
+    
+    # RNG 딕셔너리 생성
+    rngs_disc = {
+        "gumbel": jax.random.split(rng, 2)
+    }
+    
+    # 판별자 파라미터 초기화
+    variables_disc = discriminator.init(
+        rng,
+        input_ids=input_ids,
+        attention_mask=attention_mask,
+        token_type_ids=token_type_ids,
+        position_ids=position_ids,
+        labels=labels,
+        deterministic=True,
+        rngs=rngs_disc
+    )
+    
+    discriminator_params = variables_disc['params']
+    return discriminator_params
+
+def main():
+    # Initialize JAX distributed backend
+    jax.distributed.initialize()
+    
+    # TPU v4-64는 일반적으로 64개의 코어을 가지고 있습니다.
+    # 메쉬를 정의할 때 dp(데이터 병렬)과 mp(모델 병렬)의 차원을 신중하게 선택해야 합니다.
+    # 여기서는 반드시 (32,) 메쉬를 사용하여 32개의 독립적인 데이터 병렬 복제본을 만듭니다.
+    devices = np.array(jax.devices()).reshape((32,))
+    mesh = Mesh(devices, ('dp',))
+    
+    with mesh:
+        # Parse arguments
+        parser = HfArgumentParser((ModelArguments, DataTrainingArguments, TrainingArgumentsExtended))
+        if len(sys.argv) == 2 and sys.argv[1].endswith(".json"):
+            model_args, data_args, training_args = parser.parse_json_file(json_file=os.path.abspath(sys.argv[1]))
         else:
-            from src.amclr.model_electra import SimsElectra, SimsMLM
-        disc_model = SimsElectra
-        gen_model = SimsMLM
+            model_args, data_args, training_args = parser.parse_args_into_dataclasses()
 
-    tokenizer = AutoTokenizer.from_pretrained(disc_config_path)
+        # Check output directory on master node
+        host_id = jax.process_index()
+        num_hosts = jax.process_count()
+        if (
+            host_id == 0 and
+            os.path.exists(training_args.output_dir)
+            and os.listdir(training_args.output_dir)
+            and training_args.do_train
+            and not training_args.overwrite_output_dir
+        ):
+            raise ValueError(
+                f"Output directory ({training_args.output_dir}) already exists and is not empty. "
+                "Use --overwrite_output_dir to overcome."
+            )
 
-    # Initialize models
-    gen = gen_model(ElectraConfig.from_pretrained(gen_config_path), tokenizer.all_special_ids)
-    disc = disc_model(ElectraConfig.from_pretrained(disc_config_path), tokenizer.all_special_ids, gen)
+        # Initialize wandb only on master node
+        if host_id == 0:
+            wandb.init(project=training_args.output_dir.split('/')[-1], config=vars(training_args))
+            logging.basicConfig(
+                format="%(asctime)s - %(levelname)s - %(name)s - %(message)s",
+                level=logging.INFO,
+                datefmt="[%X]",
+            )
+            logger = logging.getLogger(__name__)
+            logger.info(f"Training parameters {training_args}")
+            logger.info(f"Number of Hosts: {num_hosts}")
+        else:
+            logger = logging.getLogger(__name__)
 
-    # Log model parameters
-    n_params = sum(p.numel() for p in disc.parameters())
-    logger.info(f"Training new model from scratch - Total size={n_params / 2**20:.2f}M params")
+        # Set seed
+        set_seed(training_args.seed)
 
-    # Initialize the process group
+        # Load dataset
+        datasets = load_from_disk(data_args.dataset_name)
+        train_dataset = datasets['train']
 
-    datasets.set_format("torch")
+        # Initialize RNGs
+        rng = jax.random.PRNGKey(training_args.seed)
+        rng, gumbel_rngs, dropout_rngs = jax.random.split(rng, 3)
 
-    # Prepare dataloaders
-    train_dataloader = torch.utils.data.DataLoader(
-        datasets["train"], batch_size=training_args.per_device_train_batch_size, shuffle=True
-    )
-    # Load model
-    model = disc.to(device)
+        # Create rngs dictionary
+        rngs = {'gumbel': gumbel_rngs, 'dropout': dropout_rngs}
 
-    # Broadcast parameters for consistency across replicas
-    xm.broadcast_master_param(model)
+        # Load tokenizer
+        disc_config_path = f"google/electra-{model_args.model_size}-discriminator"
+        gen_config_path = f"google/electra-{model_args.model_size}-generator"
 
-    # Wrap model in DDP
-    model = DDP(model, gradient_as_bucket_view=True)
+        tokenizer = AutoTokenizer.from_pretrained(disc_config_path)
 
-    # Define optimizer, loss, and scheduler
-    num_training_steps = training_args.max_steps  # Max steps
-        
-    optimizer = optim.AdamW(
-        model.parameters(),
-        lr=training_args.learning_rate,
-        eps=training_args.adam_epsilon,
-        weight_decay=training_args.weight_decay,
-    )
-    scheduler = get_linear_schedule_with_warmup(
-        optimizer, num_warmup_steps=training_args.warmup_steps, num_training_steps=training_args.max_steps
-    )
-    # Training loop
-    model.train()
-    para_loader = pl.MpDeviceLoader(train_dataloader, device)
-    step = 0
+        # Initialize models based on model_type
+        if model_args.model_type == "AMCLR":
+            # Initialize Generator and Discriminator
+            generator = AMCLRMLMModule(ElectraConfig.from_pretrained(gen_config_path), tokenizer.all_special_ids)
+            discriminator = AMCLRModule(ElectraConfig.from_pretrained(disc_config_path), ElectraConfig.from_pretrained(gen_config_path), tokenizer.all_special_ids)
+            model = discriminator  # Assuming discriminator is the main model for training
+        else:
+            raise NotImplementedError(f"Model type {model_args.model_type} is not implemented.")
 
-    # Infinite loop with itertools.cycle
-    for batch in itertools.cycle(para_loader):
-        if step >= num_training_steps:
-            break
-        with xla.step():
-            optimizer.zero_grad()
-            input_ids = batch["input_ids"].to(device)
-            attention_mask = batch["attention_mask"].to(device)
+        # Adjust batch sizes based on total devices
+        num_steps = int(training_args.max_steps)
+        global_train_batch_size = int(training_args.per_device_train_batch_size) * jax.device_count()
+        num_train_steps = num_steps
+        if host_id == 0:
+            logger.info(f"Global train batch size: {global_train_batch_size}")
 
-            loss = model(input_ids, attention_mask=attention_mask)
-            loss.backward()
+        # Learning rate schedule
+        warmup_fn = optax.linear_schedule(
+            init_value=0.0, end_value=training_args.learning_rate, transition_steps=training_args.warmup_steps
+        )
+        decay_fn = optax.linear_schedule(
+            init_value=training_args.learning_rate,
+            end_value=0,
+            transition_steps=num_train_steps - training_args.warmup_steps,
+        )
+        linear_decay_lr_schedule_fn = optax.join_schedules(
+            schedules=[warmup_fn, decay_fn], boundaries=[training_args.warmup_steps]
+        )
 
-            xm.optimizer_step(optimizer)
-            scheduler.step()
-            xm.mark_step()
+        # Optimizer
+        if training_args.adafactor:
+            optimizer = optax.adafactor(
+                learning_rate=linear_decay_lr_schedule_fn,
+            )
+        else:
+            optimizer = optax.adamw(
+                learning_rate=linear_decay_lr_schedule_fn,
+                b1=training_args.adam_beta1,
+                b2=training_args.adam_beta2,
+                eps=training_args.adam_epsilon,
+                weight_decay=training_args.weight_decay,
+            )
 
-        # Log training progress
-        if step % 10 == 0 and xm.is_master_ordinal():
-            tqdm.write(f"Step {step}: Loss = {loss.item()}")
-        if step % training_args.save_steps == 0 and xm.is_master_ordinal():
-            model.module.electra.save_pretrained(f"./output/step-{step}")
-            model.module.generator.electra.save_pretrained(f"./output/step-{step}/gens")
-        step += 1
+        # Initialize model parameters
+        rng, params_rng = jax.random.split(rng)
+        rngs["params"] = params_rng
+        params = model.init(rngs, input_ids=jnp.ones((1, 1)), attention_mask=jnp.ones((1, 1)), is_training=False)
 
-    # Save model (only on master replica)
-    if xm.is_master_ordinal():
-        os.makedirs("saved_model", exist_ok=True)
-        model.save_pretrained("saved_model")
-        tokenizer.save_pretrained("saved_model")
+        # Replicate parameters across all devices (data parallel replicas)
+        replicated_params = jax_utils.replicate(params)
 
+        # Define TrainState with sharded parameters
+        state = train_state.TrainState.create(apply_fn=model.apply, params=replicated_params, tx=optimizer)
 
-# Start training with TPU
+        # Define sharding specifications
+        # 파라미터는 모든 데이터 병렬 축('dp')에 복제되어야 하므로 PartitionSpec() 사용
+        # 입력 데이터는 'dp' 축을 따라 샤딩됨
+        # RNGs도 'dp' 축을 따라 샤딩됨
+        input_sharding = PartitionSpec('dp', None)
+        params_sharding = PartitionSpec()  # Replicated
+        rng_sharding = PartitionSpec('dp', None)
+
+        # Define pjit training step
+        def train_step(state, batch, rngs):
+            """
+            Perform a single training step.
+
+            Args:
+                state: Current training state.
+                batch: Training data batch.
+                rngs: RNGs for random operations in the model.
+
+            Returns:
+                New training state, metrics, updated rngs.
+            """
+            # Split dropout RNG
+            dropout_rng = rngs['dropout']
+            gumbel_rngs = rngs['gumbel']
+            dropout_rng, new_dropout_rng = jax.random.split(dropout_rng)
+            gumbel_rngs, new_gumbel_rngs = jax.random.split(gumbel_rngs)
+            
+            rngs = {
+                'gumbel': new_gumbel_rngs,
+                'dropout': new_dropout_rng,
+            }
+
+            def loss_fn(params):
+                """
+                Defines the loss function by calling the model to compute the loss.
+                """
+                loss = state.apply_fn(
+                    params,
+                    input_ids=batch['input_ids'],
+                    attention_mask=batch['attention_mask'],
+                    token_type_ids=batch.get('token_type_ids', None),
+                    position_ids=batch.get('position_ids', None),
+                    # labels=batch['labels'],
+                    is_training=True,  # Enable training-specific operations
+                    deterministic=False,  # Enable dropout
+                    rngs=rngs
+                )
+                return loss
+
+            # Compute loss and gradients
+            loss, grad = jax.value_and_grad(loss_fn)(state.params)
+
+            # Define metrics
+            metrics = {
+                "loss": loss,
+                "learning_rate": linear_decay_lr_schedule_fn(state.step)
+            }
+
+            # Update state
+            new_state = state.apply_gradients(grads=grad)
+
+            return new_state, metrics, rngs
+
+        # Apply pjit with sharding specifications
+        p_train_step = pjit(
+            train_step,
+            in_shardings=(params_sharding, input_sharding, rng_sharding),
+            out_shardings=(params_sharding, input_sharding, rng_sharding),
+            donate_argnums=(0,)
+        )
+
+        # Replicate RNGs across devices
+        replicated_rngs = jax_utils.replicate(rngs)
+
+        # Define save_checkpoint function
+        def save_checkpoint(train_state, milestone=False):
+            step = int(jax.device_get(train_state.step)[0])
+            metadata = dict(
+                step=step,
+                variant={},  # Replace with your variant configuration
+                flags={},    # Replace with your flags configuration
+                gemma_config={},  # Replace with your gemma_config
+            )
+            # Implement your own checkpointer or adjust as per your setup
+            # For demonstration, we'll simply save the state dict
+            output_dir = os.path.join(training_args.output_dir, f"checkpoint-{step}")
+            os.makedirs(output_dir, exist_ok=True)
+            with open(os.path.join(output_dir, "train_state.msgpack"), "wb") as f:
+                f.write(flax.serialization.to_bytes(train_state))
+            with open(os.path.join(output_dir, "metadata.json"), "w") as f:
+                json.dump(metadata, f)
+            logger.info(f"Saved checkpoint at step {step}")
+
+        # 데이터셋 로드 및 배칭 최적화 적용
+        # 기존의 샘플 인덱스 기반 배칭 방식을 대체
+        # 배치 단위로 데이터를 사전 샤딩하여 효율성을 높임
+        train_dataset = train_dataset.shuffle(seed=training_args.seed).batch(global_train_batch_size, drop_remainder=True)
+        train_dataloader = get_sharded_batches(train_dataset, global_train_batch_size)
+
+        # Training loop
+        with tqdm(total=num_steps, desc=f"Training Steps") as pbar:
+            for batch in tqdm(train_dataloader, desc="Training...", position=1, leave=False, disable=(host_id != 0)):
+                # Shard model inputs across devices
+                model_inputs = batch  # 이미 shard된 배치이므로 추가 샤딩 불필요
+
+                # Call p_train_step with RNGs
+                state, train_metric, replicated_rngs = p_train_step(
+                    state,
+                    model_inputs,
+                    replicated_rngs
+                )
+
+                # Update step counter
+                current_step += 1
+                pbar.update(1)
+
+                # Logging and checkpointing
+                if current_step % training_args.logging_steps == 0 and host_id == 0:
+                    # Collect metrics across devices
+                    train_metric = jax_utils.unreplicate(train_metric)
+                    loss = float(train_metric['loss'])
+                    learning_rate = float(train_metric['learning_rate'])
+
+                    # Log to wandb
+                    wandb.log({
+                        "train_loss": loss,
+                        "learning_rate": learning_rate,
+                        "step": current_step
+                    }, step=current_step)
+
+                    logger.info(
+                        f"Step {current_step}: Loss = {loss}, Learning Rate = {learning_rate}"
+                    )
+
+                if current_step % training_args.save_steps == 0 and host_id == 0:
+                    # Save checkpoint
+                    save_checkpoint(state, milestone=True)
+
+                if current_step >= num_steps:
+                    break
+
+        # Final checkpoint after training
+        if host_id == 0:
+            save_checkpoint(state, milestone=True)
+            wandb.finish()
+
 if __name__ == "__main__":
-    torch_xla.launch(train_tpu, args=())
+    main()
