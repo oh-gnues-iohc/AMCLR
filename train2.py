@@ -349,7 +349,7 @@ def main():
             dropout_rng, new_dropout_rng = jax.random.split(dropout_rng)
             gumbel_rngs, new_gumbel_rngs = jax.random.split(gumbel_rngs)
             
-            rngs = {
+            new_rngs  = {
                 'gumbel': new_gumbel_rngs,
                 'dropout': new_dropout_rng,
             }
@@ -367,7 +367,7 @@ def main():
                     # labels=batch['labels'],
                     is_training=True,  # Enable training-specific operations
                     deterministic=False,  # Enable dropout
-                    rngs=rngs
+                    rngs=new_rngs 
                 )
                 return loss
 
@@ -383,7 +383,7 @@ def main():
             # Update state
             new_state = state.apply_gradients(grads=grad)
 
-            return new_state, metrics, rngs
+            return new_state, metrics, new_rngs 
 
         # Apply pjit with sharding specifications
         p_train_step = pjit(
