@@ -271,7 +271,7 @@ def main():
         params = model.init(params_rng, input_ids=jnp.ones((1, 1)), attention_mask=jnp.ones((1, 1)), is_training=False)
 
         # Train state
-        state = train_state.TrainState.create(apply_fn=model.__call__, params=params, tx=optimizer)
+        state = train_state.TrainState.create(apply_fn=model.apply, params=params, tx=optimizer)
 
         # Define training step
         def train_step(state, batch, dropout_rng, rngs):
@@ -294,7 +294,7 @@ def main():
                 """
                 Defines the loss function by calling the model to compute the loss.
                 """
-                loss = state.apply(
+                loss = state.apply_fn(
                     params,
                     input_ids=batch['input_ids'],
                     attention_mask=batch['attention_mask'],
