@@ -386,12 +386,14 @@ def main():
             return new_state, metrics, new_rngs 
 
         # Apply pjit with sharding specifications
-        p_train_step = pjit(
-            train_step,
-            in_shardings=(params_sharding, input_sharding, rng_sharding),
-            out_shardings=(params_sharding, None, None),
-            donate_argnums=(0,)
-        )
+        # p_train_step = pjit(
+        #     train_step,
+        #     in_shardings=(params_sharding, input_sharding, rng_sharding),
+        #     out_shardings=(params_sharding, None, None),
+        #     donate_argnums=(0,)
+        # )
+        
+        p_train_step = jax.pmap(train_step, axis_name='dp', donate_argnums=(0,))
 
         # Replicate RNGs across devices
         # replicated_rngs = shard_rngs(rngs, global_device_count=jax.device_count())
