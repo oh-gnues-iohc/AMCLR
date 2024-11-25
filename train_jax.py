@@ -306,7 +306,7 @@ def main():
                     deterministic=False,  # Enable dropout
                     rngs={
                         'gumbel': rngs['gumbel'],
-                        'dropout': dropout_rng,
+                        'dropout': new_dropout_rng,
                     },        # RNGs for random operations
                 )
                 return loss
