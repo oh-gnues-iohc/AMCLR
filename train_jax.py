@@ -335,7 +335,7 @@ def main():
             return new_state, metrics, rngs
 
         # Parallelize train_step
-        p_train_step = jax.pmap(train_step, axis_name='dp', donate_argnums=(0, 1, 2))
+        p_train_step = jax.pmap(train_step, axis_name='dp', donate_argnums=(0,))
 
         # Replicate state across devices
         state = jax_utils.replicate(state)
@@ -389,6 +389,9 @@ def main():
     
                     # Shard model inputs across devices
                     model_inputs = shard(batch)
+                    logger.info(
+                        f"{batch['attention_mask'].shape}"
+                    )
     
                     # Call p_train_step with RNGs
                     state, train_metric, rngs = p_train_step(
