@@ -273,7 +273,7 @@ def main():
         state = train_state.TrainState.create(apply_fn=model.apply, params=params, tx=optimizer)
 
         # Define training step
-        def train_step(state, batch, dropout_rng, rngs):
+        def train_step(state, batch, rngs):
             """
             Perform a single training step.
 
@@ -287,7 +287,15 @@ def main():
                 New training state, metrics, updated dropout_rng.
             """
             # Split dropout RNG
+            dropout_rng = rngs['dropout']
+            gumbel_rngs = rngs['gumbel']
             dropout_rng, new_dropout_rng = jax.random.split(dropout_rng)
+            gumbel_rngs, new_gumbel_rngs = jax.random.split(gumbel_rngs)
+            
+            rngs={
+                'gumbel': new_gumbel_rngs,
+                'dropout': new_dropout_rng,
+            }
 
             def loss_fn(params):
                 """
@@ -302,10 +310,7 @@ def main():
                     # labels=batch['labels'],
                     is_training=True,  # Enable training-specific operations
                     deterministic=False,  # Enable dropout
-                    rngs={
-                        'gumbel': rngs['gumbel'],
-                        'dropout': new_dropout_rng,
-                    },        # RNGs for random operations
+                    rngs=rngs
                 )
                 return loss
 
@@ -327,7 +332,7 @@ def main():
                 "learning_rate": linear_decay_lr_schedule_fn(state.step)
             }
 
-            return new_state, metrics, new_dropout_rng
+            return new_state, metrics, rngs
 
         # Parallelize train_step
         p_train_step = jax.pmap(train_step, axis_name='dp', donate_argnums=(0, 1, 2))
@@ -386,17 +391,12 @@ def main():
                     model_inputs = shard(batch)
     
                     # Call p_train_step with RNGs
-                    state, train_metric, new_dropout_rng = p_train_step(
+                    state, train_metric, rngs = p_train_step(
                         state,
                         model_inputs,
-                        dropout_rngs,
                         rngs
                     )
     
-                    # Update RNGs
-                    dropout_rngs = new_dropout_rng
-                    rngs = {'gumbel': jax.random.split(jax_utils.unreplicate(rngs['gumbel']), jax.local_device_count())}
-                    # rngs = jax_utils.replicate(rngs)
     
                     # Update step counter
                     current_step += 1
