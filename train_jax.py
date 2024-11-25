@@ -303,7 +303,10 @@ def main():
                     # labels=batch['labels'],
                     is_training=True,  # Enable training-specific operations
                     deterministic=False,  # Enable dropout
-                    rngs=rngs,            # RNGs for random operations
+                    rngs={
+                        'gumbel': rngs['gumbel'],
+                        'dropout': dropout_rng,
+                    },        # RNGs for random operations
                 )
                 return loss
 
