@@ -170,7 +170,7 @@ def main():
     # Initialize JAX distributed backend
     jax.distributed.initialize()
     
-    devices = np.array(jax.devices()).reshape((32, 2))
+    devices = np.array(jax.devices()).reshape((32, 1))
     mesh = Mesh(devices, ('dp', 'replica'))
     with mesh:
         # Parse arguments
