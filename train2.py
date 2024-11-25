@@ -172,7 +172,7 @@ def main():
     
     devices = np.array(jax.devices()).reshape((32,))
     mesh = Mesh(devices, ('dp',))
-    
+    print(mesh)
     with mesh:
         # Parse arguments
         parser = HfArgumentParser((ModelArguments, DataTrainingArguments, TrainingArgumentsExtended))
@@ -232,8 +232,6 @@ def main():
 
         # Initialize models based on model_type
         if model_args.model_type == "AMCLR":
-            # Initialize Generator and Discriminator
-            generator = AMCLRMLMModule(ElectraConfig.from_pretrained(gen_config_path), tokenizer.all_special_ids)
             discriminator = AMCLRModule(ElectraConfig.from_pretrained(disc_config_path), ElectraConfig.from_pretrained(gen_config_path), tokenizer.all_special_ids)
             model = discriminator  # Assuming discriminator is the main model for training
         else:
@@ -380,6 +378,7 @@ def main():
         train_samples_idx = np.random.permutation(np.arange(len(train_dataset)))
         train_batch_idx = generate_batch_splits(train_samples_idx, global_train_batch_size)
         # Training loop
+        current_step = 0
         with tqdm(total=num_steps, desc=f"Training Steps") as pbar:
             for batch_idx in tqdm(train_batch_idx, desc="Training...", position=1, leave=False, disable=(host_id != 0)):
                 # Shard model inputs across devices
