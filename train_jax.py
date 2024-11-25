@@ -400,7 +400,6 @@ def main():
                         rngs
                     )
     
-    
                     # Update step counter
                     current_step += 1
                     pbar.update(1)
