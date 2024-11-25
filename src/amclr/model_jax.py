@@ -158,7 +158,7 @@ class AMCLRMLMModule(nn.Module):
         input_ids,
         attention_mask,
         token_type_ids,
-        position_ids,
+        position_ids=None,
         deterministic: bool = True,
         rngs: Dict[str, Any] = None,
     ):
@@ -255,6 +255,15 @@ class MyModule(nn.Module):
             embeddings = self.embeddings(
                 input_ids, token_type_ids, position_ids, attention_mask, deterministic=deterministic
             )
+        else:
+            position_embeds = self.embeddings.position_embeddings(position_ids.astype("i4"))
+            token_type_embeddings = self.embeddings.token_type_embeddings(token_type_ids.astype("i4"))
+            embeddings = embeddings + token_type_embeddings + position_embeds
+
+            # Layer Norm
+            embeddings = self.embeddings.LayerNorm(embeddings)
+            embeddings = self.embeddings.dropout(embeddings, deterministic=deterministic)
+            
         if hasattr(self, "embeddings_project"):
             embeddings = self.embeddings_project(embeddings)
 
@@ -298,11 +307,18 @@ class AMCLRModule(nn.Module):
         attention_mask,
         token_type_ids,
         position_ids,
-        labels,
         deterministic: bool = True,
         rngs: Dict[str, Any] = None,
     ):
         # Generator를 통해 probs, generator_sequence_output, labels를 얻습니다.
+        if position_ids is None:
+            # input_ids의 shape 가져오기: [batch_size, seq_length]
+            batch_size, seq_length = input_ids.shape
+            # [0, 1, 2, ..., seq_length - 1] 범위를 가진 position_ids 생성
+            position_ids = jnp.broadcast_to(
+                jnp.arange(seq_length, dtype=jnp.int32), (batch_size, seq_length)
+            )
+            
         probs, generator_sequence_output, labels = self.generator(
             input_ids,
             attention_mask,
