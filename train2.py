@@ -193,6 +193,20 @@ def shard_rngs(rngs, global_device_count):
     """
     return {k: jax.random.split(v, global_device_count) for k, v in rngs.items()}
 
+def prepare_rngs(rng, global_device_count):
+    """
+    Prepare RNGs to match the global device count.
+
+    Args:
+        rng: The base RNG key.
+        global_device_count: Total number of devices.
+
+    Returns:
+        Sharded RNGs array with shape (global_device_count, ...).
+    """
+    return jax.random.split(rng, global_device_count)
+
+
 def main():
     # Initialize JAX distributed backend
     jax.distributed.initialize()
@@ -380,8 +394,17 @@ def main():
         )
 
         # Replicate RNGs across devices
-        replicated_rngs = shard_rngs(rngs, global_device_count=jax.device_count())
-        replicated_rngs = jax_utils.replicate(replicated_rngs)
+        # replicated_rngs = shard_rngs(rngs, global_device_count=jax.device_count())
+        # replicated_rngs = jax_utils.replicate(replicated_rngs)
+        
+        
+        rng = jax.random.PRNGKey(training_args.seed)
+        rngs = {
+            'gumbel': prepare_rngs(jax.random.split(rng, 1)[0], jax.device_count()),
+            'dropout': prepare_rngs(jax.random.split(rng, 1)[1], jax.device_count()),
+        }
+        replicated_rngs = jax_utils.replicate(rngs)
+
 
         # Define save_checkpoint function
         def save_checkpoint(train_state, milestone=False):
