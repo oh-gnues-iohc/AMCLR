@@ -368,12 +368,12 @@ class AMCLRModule(nn.Module):
         )
         gen_cls_hidden_state = generator_sequence_output[:, 0, :]
 
-        disc_cls_hidden_state = jax.lax.all_gather(disc_cls_hidden_state, 'batch')
-        gen_cls_hidden_state = jax.lax.all_gather(gen_cls_hidden_state, 'batch')
+        disc_cls_hidden_state = jax.lax.all_gather(disc_cls_hidden_state, 'dp')
+        gen_cls_hidden_state = jax.lax.all_gather(gen_cls_hidden_state, 'dp')
 
         # Stop gradients from flowing back to representations from other devices
         def stop_gradient_except_own(x):
-            own_device_index = jax.lax.axis_index('batch')
+            own_device_index = jax.lax.axis_index('dp')
             num_devices = x.shape[0]
             device_indices = jnp.arange(num_devices)
             mask = device_indices[:, None] != own_device_index  # [num_devices, 1]
