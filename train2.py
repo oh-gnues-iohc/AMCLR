@@ -404,7 +404,7 @@ def main():
             'dropout': prepare_rngs(jax.random.split(rng, 1)[1], jax.device_count()),
         }
         replicated_rngs = jax_utils.replicate(rngs)
-
+        print(rngs["dropout"].shape)
 
         # Define save_checkpoint function
         def save_checkpoint(train_state, milestone=False):
