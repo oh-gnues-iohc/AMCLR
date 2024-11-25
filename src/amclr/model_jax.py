@@ -9,6 +9,7 @@ from transformers import (
 from transformers.models.electra.modeling_flax_electra import *
 from typing import Any, Dict, Optional, Tuple
 from flax.training.common_utils import onehot
+import optax
 
 
 def sample_gumbel(shape, dtype=jnp.float32, rng=None):
@@ -391,20 +392,31 @@ class AMCLRModule(nn.Module):
         global_batch_size = disc_cls_hidden_state.shape[0] * batch_size
         disc_cls_hidden_state = disc_cls_hidden_state.reshape(global_batch_size, -1)
         gen_cls_hidden_state = gen_cls_hidden_state.reshape(global_batch_size, -1)
-        print(global_batch_size)
         scores = jnp.matmul(
             disc_cls_hidden_state, gen_cls_hidden_state.T
         )  # [batch_size, batch_size]
         positive_idx = jnp.arange(scores.shape[0])
 
         # 손실 함수 계산
-        loss_fct = nn.losses.sigmoid_cross_entropy
-        disc_loss = loss_fct(logits, labels.astype(self.dtype)) * self.l1
-
-        softmax_scores = nn.log_softmax(scores, axis=1)
-        sims_loss = -softmax_scores[
-            jnp.arange(scores.shape[0]), positive_idx
-        ].mean() * self.l2
+        loss_fct = optax.sigmoid_binary_cross_entropy
+        
+        disc_labels = jnp.zeros_like(input_ids, dtype=self.dtype)
+        disc_labels = jnp.where(
+            mask_indices, 1.0, disc_labels
+        )
+        disc_loss = loss_fct(logits, disc_labels.astype(self.dtype)) * self.l1
+        
+        disc_loss = disc_loss * attention_mask
+        disc_loss = jnp.sum(disc_loss) / jnp.sum(attention_mask)
+        
+        # softmax_scores = nn.log_softmax(scores, axis=1)
+        # sims_loss = -softmax_scores[
+        #     jnp.arange(scores.shape[0]), positive_idx
+        # ].mean() * self.l2
+        sims_labels = jax.nn.one_hot(positive_idx, num_classes=scores.shape[1])
+        sims_loss = optax.softmax_cross_entropy(
+            logits=scores, labels=sims_labels
+        ).mean() * self.l2
 
         total_loss = disc_loss + sims_loss
 
