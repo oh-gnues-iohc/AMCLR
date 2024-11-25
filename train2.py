@@ -328,7 +328,7 @@ def main():
         # RNGs도 'dp' 축을 따라 샤딩됨
         input_sharding = PartitionSpec('dp', None, None)
         params_sharding = PartitionSpec()  # Replicated
-        rng_sharding = PartitionSpec('dp',)
+        rng_sharding = PartitionSpec()
 
         # Define pjit training step
         def train_step(state, batch, rngs):
@@ -398,11 +398,11 @@ def main():
         # replicated_rngs = jax_utils.replicate(replicated_rngs)
         
         
-        rng = jax.random.PRNGKey(training_args.seed)
-        rngs = {
-            'gumbel': prepare_rngs(jax.random.split(rng, 1)[0], jax.device_count()),  # Unique RNG for gumbel
-            'dropout': prepare_rngs(jax.random.split(rng, 1)[1], jax.device_count()),  # Unique RNG for dropout
-        }
+        # rng = jax.random.PRNGKey(training_args.seed)
+        # rngs = {
+        #     'gumbel': prepare_rngs(jax.random.split(rng, 1)[0], jax.device_count()),  # Unique RNG for gumbel
+        #     'dropout': prepare_rngs(jax.random.split(rng, 1)[1], jax.device_count()),  # Unique RNG for dropout
+        # }
         replicated_rngs = rngs
 
         # Define save_checkpoint function
