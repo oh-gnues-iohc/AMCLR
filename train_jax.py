@@ -316,7 +316,7 @@ def main():
 
             # Compute loss and gradients
             loss, grad = jax.value_and_grad(loss_fn)(state.params)
-            print(loss.shape)
+            logger.info(loss.shape)
             # Sum the loss across devices
             loss = jax.lax.pmean(loss, axis_name='dp')
 
