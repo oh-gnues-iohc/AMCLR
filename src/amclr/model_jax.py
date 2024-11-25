@@ -375,8 +375,10 @@ class AMCLRModule(nn.Module):
         
         if is_training:
 
-            disc_cls_hidden_state = jax.lax.all_gather(disc_cls_hidden_state, 'dp')
-            gen_cls_hidden_state = jax.lax.all_gather(gen_cls_hidden_state, 'dp')
+            disc_cls_hidden_state = jax.lax.all_gather(disc_cls_hidden_state, 'host')
+            gen_cls_hidden_state = jax.lax.all_gather(gen_cls_hidden_state, 'host')
+
+            print(disc_cls_hidden_state.shape)
 
             # Stop gradients from flowing back to representations from other devices
             def stop_gradient_except_own(x):
