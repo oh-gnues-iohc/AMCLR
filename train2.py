@@ -172,7 +172,6 @@ def main():
     
     devices = np.array(jax.devices()).reshape((32,))
     mesh = Mesh(devices, ('dp',))
-    print(mesh)
     with mesh:
         # Parse arguments
         parser = HfArgumentParser((ModelArguments, DataTrainingArguments, TrainingArgumentsExtended))
@@ -286,9 +285,9 @@ def main():
         # 파라미터는 모든 데이터 병렬 축('dp')에 복제되어야 하므로 PartitionSpec() 사용
         # 입력 데이터는 'dp' 축을 따라 샤딩됨
         # RNGs도 'dp' 축을 따라 샤딩됨
-        input_sharding = PartitionSpec('dp', None, None)
+        input_sharding = PartitionSpec('dp',)
         params_sharding = PartitionSpec()  # Replicated
-        rng_sharding = PartitionSpec('dp', None, None)
+        rng_sharding = PartitionSpec('dp',)
 
         # Define pjit training step
         def train_step(state, batch, rngs):
