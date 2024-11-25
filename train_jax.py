@@ -268,7 +268,8 @@ def main():
 
         # Initialize model parameters
         rng, params_rng = jax.random.split(rng)
-        params = model.init(params_rng, input_ids=jnp.ones((1, 1)), attention_mask=jnp.ones((1, 1)))
+        rngs_init = {'gumbel': jax.random.split(params_rng, 2)}
+        params = model.init(params_rng, input_ids=jnp.ones((1, 1)), attention_mask=jnp.ones((1, 1)), rngs=rngs_init)
 
         # Train state
         state = train_state.TrainState.create(apply_fn=model.__call__, params=params, tx=optimizer)
