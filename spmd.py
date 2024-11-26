@@ -242,11 +242,12 @@ def main():
         active_dataloader = train_device_loader
         for step, batch in enumerate(active_dataloader):
             loss = compiled_step_fn(batch)
-            logger.info(f"Training Loss {loss.item()}")
             xm.mark_step()
             
             progress_bar.update(1)
             completed_steps += 1
+            if completed_steps % args.logging_steps == 0:
+                logger.info(f"Training Loss {loss.item()}")
 
             if isinstance(checkpointing_steps, int):
                 if completed_steps % checkpointing_steps == 0:
