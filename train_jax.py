@@ -65,6 +65,21 @@ class TrainingArgumentsExtended(TrainingArguments):
     # You can define additional training arguments here if needed.
     pass
 
+def generate_batch_splits(samples_idx: np.ndarray, batch_size: int, drop_last=True) -> np.ndarray:
+    """Generate batches of data for a specified batch size from sample indices."""
+    num_samples = len(samples_idx)
+    if drop_last:
+        samples_to_remove = num_samples % batch_size
+        if samples_to_remove != 0:
+            samples_idx = samples_idx[:-samples_to_remove]
+        sections_split = num_samples // batch_size
+        samples_idx = samples_idx.reshape((sections_split, batch_size))
+    else:
+        sections_split = math.ceil(num_samples / batch_size)
+        samples_idx = np.array_split(samples_idx, sections_split)
+    return samples_idx
+
+
 def main():
     # Initialize JAX distributed backend
     jax.distributed.initialize()
