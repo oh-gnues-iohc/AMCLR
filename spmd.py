@@ -227,7 +227,6 @@ def main():
         active_dataloader = train_device_loader
         for step, batch in enumerate(active_dataloader):
             optimizer.zero_grad()
-            print(batch["input_ids"].shape)
             outputs = model(**batch)
             loss = outputs
             print(loss)
@@ -247,7 +246,7 @@ def main():
                     model.electra.save_pretrained(output_dir)
                     model.generator.save_pretrained(os.path.join(output_dir, "gens"))
 
-            if completed_steps >= args.max_train_steps:
+            if completed_steps >= args.max_steps:
                 break
 
 
