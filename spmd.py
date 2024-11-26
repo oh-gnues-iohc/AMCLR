@@ -220,14 +220,12 @@ def main():
     completed_steps = 0
     starting_epoch = 0
     
-    print(get_global_rank())
     
     progress_bar.update(completed_steps)
     for epoch in range(starting_epoch, args.num_train_epochs):
         model.train()
         active_dataloader = train_device_loader
         for step, batch in enumerate(active_dataloader):
-            print(batch["input_ids"].shape)
             outputs = model(**batch)
             loss = outputs.loss
             loss.backward()
