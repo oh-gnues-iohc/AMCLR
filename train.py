@@ -48,7 +48,7 @@ class DataTrainingArguments:
     )
 
 
-xr.use_spmd()
+# xr.use_spmd()
 def main():
     # Parse arguments
     parser = HfArgumentParser((ModelArguments, DataTrainingArguments, TrainingArguments))
