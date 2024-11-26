@@ -242,6 +242,7 @@ def main():
         active_dataloader = train_device_loader
         for step, batch in enumerate(active_dataloader):
             loss = compiled_step_fn(batch)
+            logger.info(f"Training Loss {loss.item()}")
             xm.mark_step()
             
             progress_bar.update(1)
