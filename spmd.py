@@ -227,6 +227,7 @@ def main():
         model.train()
         active_dataloader = train_device_loader
         for step, batch in enumerate(active_dataloader):
+            print(batch["input_ids"].shape)
             outputs = model(**batch)
             loss = outputs.loss
             loss.backward()
