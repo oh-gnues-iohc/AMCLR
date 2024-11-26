@@ -176,17 +176,17 @@ class MixtureEncoder(ElectraEncoder):
 class AMCLRMLM(ElectraForMaskedLM):
     def __init__(self, config, special_token_ids):
         super().__init__(config)
-        self.masking_ratio = 0.15
+        masking_ratio = 0.15
         self.temperature = 0.3
         self.generator_score_head = nn.Linear(config.embedding_size, 1)
         self.register_buffer('special_tokens', torch.tensor(special_token_ids, dtype=torch.long))
         
-        batch_indices = torch.arange(8).unsqueeze(1)  # [batch_size, 1]
-        seq_indices = torch.arange(512).unsqueeze(0)      # [1, seq_len]
-        self.num_maskings = max(int(512 * self.masking_ratio), 1)
+        # batch_indices = torch.arange(8).unsqueeze(1)  # [batch_size, 1]
+        # seq_indices = torch.arange(512).unsqueeze(0)      # [1, seq_len]
+        self.num_maskings = max(int(512 * masking_ratio), 1)
         
-        self.register_buffer('batch_indices', batch_indices)
-        self.register_buffer('seq_indices', seq_indices)
+        # self.register_buffer('batch_indices', batch_indices)
+        # self.register_buffer('seq_indices', seq_indices)
         
         
         self.post_init()
