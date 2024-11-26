@@ -33,7 +33,7 @@ xr.use_spmd()
 logger = logging.getLogger(__name__)
 
 def get_global_rank():
-    return xmp.get_ordinal()
+    return xm.get_ordinal()
 
 MODEL_SIZES = ["small", "base", "large"]
 MODEL_TYPES = ["AMCLR", "ELECTRA", "AMOS"]
