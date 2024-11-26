@@ -114,5 +114,5 @@ def _mp_fn(index):
 
 
 if __name__ == "__main__":
-    # torch_xla.launch(_mp_fn)
-    main()
+    torch_xla.launch(_mp_fn)
+    # main()
