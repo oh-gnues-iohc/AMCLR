@@ -176,10 +176,18 @@ class MixtureEncoder(ElectraEncoder):
 class AMCLRMLM(ElectraForMaskedLM):
     def __init__(self, config, special_token_ids):
         super().__init__(config)
-        self.special_token_ids = special_token_ids
         self.masking_ratio = 0.15
         self.temperature = 0.3
         self.generator_score_head = nn.Linear(config.embedding_size, 1)
+        self.register_buffer('special_tokens', torch.tensor(special_token_ids, dtype=torch.long))
+        
+        batch_indices = torch.arange(8).unsqueeze(1)  # [batch_size, 1]
+        seq_indices = torch.arange(512).unsqueeze(0)      # [1, seq_len]
+        self.num_maskings = max(int(512 * self.masking_ratio), 1)
+        
+        self.register_buffer('batch_indices', batch_indices)
+        self.register_buffer('seq_indices', seq_indices)
+        
         
         self.post_init()
 
@@ -218,9 +226,7 @@ class AMCLRMLM(ElectraForMaskedLM):
                 
         mask = torch.zeros_like(similarity)
         
-        batch_indices = torch.arange(similarity.size(0)).unsqueeze(1)
-        seq_indices = torch.arange(similarity.size(1)).unsqueeze(0)
-        mask[batch_indices, seq_indices, input_ids] = torch.finfo(self.dtype).min
+        mask[self.batch_indices, self.seq_indices, input_ids] = torch.finfo(self.dtype).min
         mask[:, :, :100] = torch.finfo(self.dtype).min
         mask[:, :, 104:999] = torch.finfo(self.dtype).min
         masked_similarities = similarity + mask #[batch_size, seq_len, vocab_size]
@@ -228,12 +234,10 @@ class AMCLRMLM(ElectraForMaskedLM):
         batch_size, seq_len, hidden_dim = generator_sequence_output.shape
 
         # Create special token mask
-        special_tokens = torch.tensor(self.special_token_ids, device=self.device)
-        is_special = (input_ids.unsqueeze(-1) == special_tokens).any(dim=-1)  # [batch_size, seq_len]
+        is_special = (input_ids.unsqueeze(-1) == self.special_tokens).any(dim=-1)  # [batch_size, seq_len]
         non_special_mask = (~is_special).float()
 
         # Calculate number of tokens to swap
-        num_maskings = max(int(seq_len * self.masking_ratio), 1)
         
         score_mask = torch.zeros_like(scores)
         
@@ -244,21 +248,25 @@ class AMCLRMLM(ElectraForMaskedLM):
         
         masked_scores = scores + score_mask # [batch_size, seq_len]
         
-        y_soft = F.gumbel_softmax(masked_scores, hard=False, dim=-1) # [batch_size, seq_len]
-        _, topk_indices = y_soft.topk(num_maskings, dim=1)
+        y_soft = F.softmax(masked_scores, dim=-1)  # [batch_size, seq_len]
+        _, topk_indices = y_soft.topk(self.num_maskings, dim=1)
         
         topk_hard = torch.zeros_like(masked_scores).scatter_(-1, topk_indices, 1.0)
 
         top_k_socres = topk_hard - y_soft.detach() + y_soft
         
         
-        token_probs = F.gumbel_softmax(masked_similarities, tau=self.temperature, hard=True, dim=-1) # [batch_size, seq_len, vocab_size]
+        token_probs_soft = F.softmax((masked_similarities / self.temperature), dim=-1)  # [batch_size, seq_len]
+        _, topk_token_indices = token_probs_soft.topk(1, dim=1)
         
+        token_probs_hard = torch.zeros_like(masked_similarities).scatter_(-1, topk_token_indices, 1.0)
+        # token_probs = F.gumbel_softmax(masked_similarities, tau=self.temperature, hard=True, dim=-1) # [batch_size, seq_len, vocab_size]
+        token_probs = token_probs_hard - token_probs_soft.detach() + token_probs_soft
         
         probs = token_probs * top_k_socres.unsqueeze(-1)
-        labels = top_k_socres.detach().bool().long()
+        # labels = top_k_socres.detach().bool().long()
         
-        return probs, generator_sequence_output, labels
+        return probs, generator_sequence_output#, labels
 
 class GradMultiply(Function):
     """Gradient backpropagation multiplication."""
@@ -311,7 +319,7 @@ class AMCLR(ElectraForPreTraining):
     ):
         return_dict = return_dict if return_dict is not None else self.config.use_return_dict
         
-        probs, generator_sequence_output, labels = self.generator(
+        probs, generator_sequence_output = self.generator(
             input_ids,
             attention_mask=attention_mask,
             token_type_ids=token_type_ids,
