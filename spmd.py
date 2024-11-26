@@ -26,13 +26,14 @@ import torch_xla.distributed.spmd as xs
 import torch_xla.distributed.parallel_loader as pl
 import torch_xla.utils.utils as xu
 from torch_xla import runtime as xr
+import torch_xla
 # Enable SPMD mode execution
 xr.use_spmd()
 
 logger = logging.getLogger(__name__)
 
 def get_global_rank():
-    return xm.get_ordinal()
+    return xmp.get_ordinal()
 
 MODEL_SIZES = ["small", "base", "large"]
 MODEL_TYPES = ["AMCLR", "ELECTRA", "AMOS"]
@@ -221,20 +222,24 @@ def main():
     starting_epoch = 0
     
     
+    def step_fn(batch):
+        optimizer.zero_grad()
+        loss = model(**batch)
+        loss.backward()
+        optimizer.step()
+        return loss
+    
+    compiled_step_fn = torch_xla.compile(
+        step_fn, full_graph=True, name="step_fn")
+
     progress_bar.update(completed_steps)
     for epoch in range(starting_epoch, args.num_train_epochs):
         model.train()
         active_dataloader = train_device_loader
         for step, batch in enumerate(active_dataloader):
-            optimizer.zero_grad()
-            outputs = model(**batch)
-            loss = outputs
-            print(loss)
-            # loss.backward()
-            optimizer.step()
-            lr_scheduler.step()
-            xm.mark_step()
-
+            print(get_global_rank())
+            loss = compiled_step_fn(batch)
+            
             progress_bar.update(1)
             completed_steps += 1
 
