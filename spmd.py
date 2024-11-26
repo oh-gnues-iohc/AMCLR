@@ -147,7 +147,7 @@ def main():
     mesh = xs.Mesh(device_ids, mesh_shape, ('data',))
     batch_size = num_devices * training_args.per_device_train_batch_size
     
-    logger.info(f"SPMD Mesh: {mesh}, Batch size: {batch_size}")
+    # logger.info(f"SPMD Mesh: {mesh}, Batch size: {batch_size}")
 
     # Dataset preparation
     def collate_fn(batch):
