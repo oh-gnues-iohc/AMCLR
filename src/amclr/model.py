@@ -385,7 +385,7 @@ class AMCLR(ElectraForPreTraining):
             global_gen_cls_hidden_state = gen_cls_hidden_state
             
             
-        print(global_gen_cls_hidden_state.shape, logits.shape, local_rank, distributed_world_size)
+        # print(global_gen_cls_hidden_state.shape, logits.shape, local_rank, distributed_world_size)
             
         positive_idx_per_question = torch.arange(
         global_disc_cls_hidden_state.size(0), device=disc_cls_hidden_state.device
@@ -418,7 +418,8 @@ class AMCLR(ElectraForPreTraining):
             
         loss = disc_loss + sims_loss
         output = (None,)
-        return loss
+        return ((loss,) + output) if loss is not None else output
+        # return loss
 
     def save_pretrained(self, dirs, state_dict, safe_serialization):
         import os
