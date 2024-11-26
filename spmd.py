@@ -227,7 +227,6 @@ def main():
         loss = model(**batch)
         loss.backward()
         optimizer.step()
-        xm.mark_step()
         return loss
     import os
 
@@ -241,6 +240,7 @@ def main():
         active_dataloader = train_device_loader
         for step, batch in enumerate(active_dataloader):
             loss = compiled_step_fn(batch)
+            xm.mark_step()
             
             progress_bar.update(1)
             completed_steps += 1
