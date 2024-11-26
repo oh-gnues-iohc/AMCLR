@@ -172,11 +172,6 @@ def main():
 
     # Sharded DataLoader
     import torch_xla.distributed.parallel_loader as pl
-    train_device_loader = pl.MpDeviceLoader(
-        train_loader,
-        xm.xla_device(),
-        input_sharding=xs.ShardingSpec(mesh, ("data", None, None)),
-    )
     args = training_args
     model = disc.to(xm.xla_device())
     
@@ -195,7 +190,7 @@ def main():
 
 
     overrode_max_train_steps = False
-    num_update_steps_per_epoch = math.ceil(len(train_device_loader) / args.gradient_accumulation_steps)
+    num_update_steps_per_epoch = math.ceil(len(train_loader) / args.gradient_accumulation_steps)
     if args.max_steps is None:
         args.max_steps = args.num_train_epochs * num_update_steps_per_epoch
         overrode_max_train_steps = True
@@ -207,7 +202,7 @@ def main():
         num_training_steps=args.max_steps
     )
     
-    num_update_steps_per_epoch = math.ceil(len(train_device_loader) / args.gradient_accumulation_steps)
+    num_update_steps_per_epoch = math.ceil(len(train_loader) / args.gradient_accumulation_steps)
     if overrode_max_train_steps:
         args.max_steps = args.num_train_epochs * num_update_steps_per_epoch
     # Afterwards we recalculate our number of training epochs
@@ -224,15 +219,22 @@ def main():
     progress_bar.update(completed_steps)
     for epoch in range(starting_epoch, args.num_train_epochs):
         model.train()
-        active_dataloader = train_device_loader
+        active_dataloader = train_loader
         for step, batch in enumerate(active_dataloader):
+            input_ids = batch["input_ids"]
+            attention_mask = batch["attention_mask"]
+            
+            print(xr.world_size())
+            xs.mark_sharding(input_ids, mesh, (0, 32))
+            print(input_ids.shape)
+            optimizer.zero_grad()
             outputs = model(**batch)
             loss = outputs
             print(loss)
-            loss.backward()
+            # loss.backward()
             optimizer.step()
             lr_scheduler.step()
-            optimizer.zero_grad()
+            xm.mark_step()
 
             progress_bar.update(1)
             completed_steps += 1
