@@ -454,26 +454,6 @@ def main():
 
             return variables, opt_state, metrics, rngs
 
-        # Apply pjit with sharding specifications
-        p_train_step = pjit(
-            train_step,
-            in_shardings=(params_sharding, input_sharding, rng_sharding),
-            out_shardings=(params_sharding, None, None),
-            donate_argnums=(0,)
-        )
-        
-        # p_train_step = jax.pmap(train_step, axis_name='dp', donate_argnums=(0,))
-
-        # Replicate RNGs across devices
-        # replicated_rngs = shard_rngs(rngs, global_device_count=jax.device_count())
-        # replicated_rngs = jax_utils.replicate(replicated_rngs)
-        
-        
-        # rng = jax.random.PRNGKey(training_args.seed)
-        # rngs = {
-        #     'gumbel': prepare_rngs(jax.random.split(rng, 1)[0], jax.device_count()),  # Unique RNG for gumbel
-        #     'dropout': prepare_rngs(jax.random.split(rng, 1)[1], jax.device_count()),  # Unique RNG for dropout
-        # }
         replicated_rngs = rngs
 
         # Define save_checkpoint function
@@ -511,7 +491,7 @@ def main():
                 model_inputs = manual_shard(batch)
 
                 # Call p_train_step with RNGs
-                state, train_metric, replicated_rngs = p_train_step(
+                state, train_metric, replicated_rngs = train_step(
                     state,
                     model_inputs,
                     replicated_rngs
