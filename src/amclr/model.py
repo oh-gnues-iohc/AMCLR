@@ -389,10 +389,16 @@ class AMCLR(ElectraForPreTraining):
         loss = None
         if labels is not None:
             loss_fct = nn.BCEWithLogitsLoss()
+            disc_label = torch.where(
+                mask_indices,  # 조건
+                torch.tensor(1.0, device=mask_indices.device),  # 조건이 True일 때 값
+                torch.tensor(0.0, device=mask_indices.device)   # 조건이 False일 때 값
+            )
+
             if attention_mask is not None:
                 active_loss = attention_mask.view(-1, discriminator_sequence_output.shape[1]) == 1
-                active_logits = logits.view(-1, discriminator_sequence_output.shape[1])[active_loss]
-                active_labels = labels[active_loss]
+                active_logits = logits.view(-1, discriminator_sequence_output.shape[1]).masked_select(active_loss.unsqueeze(-1)).view(-1, logits.size(-1))
+                active_labels = disc_label.masked_select(active_loss)
                 disc_loss = loss_fct(active_logits, active_labels.float()) * self.l1
             else:
                 disc_loss = loss_fct(logits.view(-1, discriminator_sequence_output.shape[1]), labels.float()) * self.l1
