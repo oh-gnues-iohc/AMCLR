@@ -212,7 +212,7 @@ def main():
     args.num_train_epochs = math.ceil(args.max_steps / num_update_steps_per_epoch)
 
     # Figure out how many steps we should save the Accelerator states
-    checkpointing_steps = args.checkpointing_steps
+    checkpointing_steps = args.save_steps
 
     progress_bar = tqdm(range(training_args.max_steps), disable=not training_args.local_rank == 0)
     completed_steps = 0
