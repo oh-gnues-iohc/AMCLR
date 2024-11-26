@@ -8,6 +8,8 @@ from itertools import chain
 from typing import Optional
 import numpy as np
 import torch
+import torch.distributed.checkpoint as dist_cp
+import torch_xla.experimental.distributed_checkpoint as xc
 
 import transformers
 from transformers import (
@@ -252,8 +254,19 @@ def main():
                     output_dir = f"step_{completed_steps}"
                     if args.output_dir is not None:
                         output_dir = os.path.join(args.output_dir, output_dir)
-                    model.electra.save_pretrained(output_dir)
-                    model.generator.save_pretrained(os.path.join(output_dir, "gens"))
+                    # model.electra.save_pretrained(output_dir)
+                    # model.generator.save_pretrained(os.path.join(output_dir, "gens"))
+                    
+                    state_dict = {
+                        "disc": model.electra.state_dict(),
+                        "gen": model.generator.state_dict()
+                    }
+
+                    dist_cp.save(
+                        state_dict=state_dict,
+                        storage_writer=dist_cp.FileSystemWriter(output_dir),
+                        planner=xc.SPMDSavePlanner(),
+                    )
                     xm.wait_device_ops()
                     
             if completed_steps >= args.max_steps:
