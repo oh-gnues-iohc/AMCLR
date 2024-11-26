@@ -313,7 +313,7 @@ def main():
     
                     # Shard model inputs across devices
                     sharding = jax.sharding.NamedSharding(mesh, jax.sharding.PartitionSpec('dp'))
-                    global_batch_array = jax.array.make_array_from_process_local_data(
+                    global_batch_array = jax.Array.make_array_from_process_local_data(
                         sharding, batch)
                     # model_inputs = shard(batch)
                     logger.info(
