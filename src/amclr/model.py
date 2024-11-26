@@ -386,6 +386,7 @@ class AMCLR(ElectraForPreTraining):
             
             
         logger.info(global_gen_cls_hidden_state.shape, logits.shape, local_rank, distributed_world_size)
+        print(global_gen_cls_hidden_state.shape, logits.shape, local_rank, distributed_world_size)
             
         positive_idx_per_question = torch.arange(
         global_disc_cls_hidden_state.size(0), device=disc_cls_hidden_state.device
