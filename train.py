@@ -108,6 +108,7 @@ def main():
 
 def _mp_fn(index):
     # For xla_spawn (TPUs)
+    print(index, index,index, index,index, index,index, index)
     xr.initialize_cache(f'/tmp/xla_cache_{index}', readonly=False)
     main()
 
