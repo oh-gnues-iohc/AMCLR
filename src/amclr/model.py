@@ -239,7 +239,8 @@ class AMCLRMLM(ElectraForMaskedLM):
         
         valid_tokens = attention_mask * non_special_mask  # [batch_size, seq_len]
         invalid_tokens = ~(valid_tokens).bool() # [batch_size, seq_len]
-        score_mask[invalid_tokens] = torch.finfo(self.dtype).min
+        score_mask = torch.where(invalid_tokens, torch.tensor(torch.finfo(self.dtype).min, device=score_mask.device), score_mask)
+        # score_mask[invalid_tokens] = torch.finfo(self.dtype).min
         
         masked_scores = scores + score_mask # [batch_size, seq_len]
         
