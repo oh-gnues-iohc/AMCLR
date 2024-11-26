@@ -217,7 +217,7 @@ def main():
     # Figure out how many steps we should save the Accelerator states
     checkpointing_steps = args.save_steps
 
-    progress_bar = tqdm(range(training_args.max_steps), disable=not training_args.local_rank == 0)
+    progress_bar = tqdm(range(training_args.max_steps), disable=not xm.is_master_ordinal())
     completed_steps = 0
     starting_epoch = 0
     
