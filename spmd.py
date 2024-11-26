@@ -16,7 +16,9 @@ from transformers import (
     Trainer,
     TrainingArguments,
     set_seed,
+    get_scheduler
 )
+from tqdm import tqdm
 import torch
 import torch_xla.distributed.xla_multiprocessing as xmp
 import torch_xla.core.xla_model as xm
@@ -173,9 +175,9 @@ def main():
         xm.xla_device(),
         input_sharding=xs.ShardingSpec(mesh, ("data", None, None)),
     )
-    print(len(train_loader), len(train_device_loader))
     args = training_args
-    model = disc
+    model = disc.to(xm.xla_device())
+    print(xm.xla_device())
     
     no_decay = ["bias", "LayerNorm.weight"]
     optimizer_grouped_parameters = [
@@ -191,21 +193,63 @@ def main():
     optimizer = torch.optim.AdamW(optimizer_grouped_parameters, lr=args.learning_rate)
 
 
-    # trainer = Trainer(
-    #     model=model,
-    #     args=training_args,
-    #     train_dataset=datasets,
-    #     tokenizer=tokenizer,
-    # )
+    overrode_max_train_steps = False
+    num_update_steps_per_epoch = math.ceil(len(train_device_loader) / args.gradient_accumulation_steps)
+    if args.max_train_steps is None:
+        args.max_train_steps = args.num_train_epochs * num_update_steps_per_epoch
+        overrode_max_train_steps = True
 
-    # # Test model saving
-    # # if training_args.do_train:
-    # #     print("Saving model before training")
-    # #     trainer.save_model()
-    # #     print("Model saved")
+    lr_scheduler = get_scheduler(
+        name=args.lr_scheduler_type,
+        optimizer=optimizer,
+        num_warmup_steps=args.num_warmup_steps,
+        num_training_steps=args.max_train_steps
+        if overrode_max_train_steps
+        else args.max_train_stepss,
+    )
+    
+    num_update_steps_per_epoch = math.ceil(len(train_device_loader) / args.gradient_accumulation_steps)
+    if overrode_max_train_steps:
+        args.max_train_steps = args.num_train_epochs * num_update_steps_per_epoch
+    # Afterwards we recalculate our number of training epochs
+    args.num_train_epochs = math.ceil(args.max_train_steps / num_update_steps_per_epoch)
 
-    # trainer.train()
+    # Figure out how many steps we should save the Accelerator states
+    checkpointing_steps = args.checkpointing_steps
 
+    progress_bar = tqdm(range(training_args.max_steps), disable=not training_args.local_rank == 0)
+    completed_steps = 0
+    starting_epoch = 0
+    progress_bar.update(completed_steps)
+    for epoch in range(starting_epoch, args.num_train_epochs):
+        model.train()
+        if args.with_tracking:
+            total_loss = 0
+        active_dataloader = train_device_loader
+        for step, batch in enumerate(active_dataloader):
+            outputs = model(**batch)
+            loss = outputs.loss
+            # We keep track of the loss at each epoch
+            if args.with_tracking:
+                total_loss += loss.detach().float()
+            loss.backward()
+            optimizer.step()
+            lr_scheduler.step()
+            optimizer.zero_grad()
+
+            progress_bar.update(1)
+            completed_steps += 1
+
+            if isinstance(checkpointing_steps, int):
+                if completed_steps % checkpointing_steps == 0:
+                    output_dir = f"step_{completed_steps}"
+                    if args.output_dir is not None:
+                        output_dir = os.path.join(args.output_dir, output_dir)
+                    model.electra.save_pretrained(output_dir)
+                    model.generator.save_pretrained(os.path.join(output_dir, "gens"))
+
+            if completed_steps >= args.max_train_steps:
+                break
 
 
 def _mp_fn(index):
