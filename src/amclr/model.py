@@ -226,7 +226,9 @@ class AMCLRMLM(ElectraForMaskedLM):
                 
         mask = torch.zeros_like(similarity)
         
-        mask[self.batch_indices, self.seq_indices, input_ids] = torch.finfo(self.dtype).min
+        batch_indices = torch.arange(similarity.size(0)).unsqueeze(1)
+        seq_indices = torch.arange(similarity.size(1)).unsqueeze(0)
+        mask[batch_indices, seq_indices, input_ids] = torch.finfo(self.dtype).min
         mask[:, :, :100] = torch.finfo(self.dtype).min
         mask[:, :, 104:999] = torch.finfo(self.dtype).min
         masked_similarities = similarity + mask #[batch_size, seq_len, vocab_size]
@@ -248,7 +250,7 @@ class AMCLRMLM(ElectraForMaskedLM):
         
         masked_scores = scores + score_mask # [batch_size, seq_len]
         
-        y_soft = F.gumbel_softmax(masked_scores, hard=False, dim=-1)
+        y_soft = F.softmax(masked_scores, dim=-1)  # [batch_size, seq_len]
         _, topk_indices = y_soft.topk(self.num_maskings, dim=1)
         
         topk_hard = torch.zeros_like(masked_scores).scatter_(-1, topk_indices, 1.0)
@@ -256,12 +258,12 @@ class AMCLRMLM(ElectraForMaskedLM):
         top_k_socres = topk_hard - y_soft.detach() + y_soft
         
         
-        # token_probs_soft = F.softmax((masked_similarities / self.temperature), dim=-1)  # [batch_size, seq_len]
-        # _, topk_token_indices = token_probs_soft.topk(1, dim=1)
+        token_probs_soft = F.softmax((masked_similarities / self.temperature), dim=-1)  # [batch_size, seq_len]
+        _, topk_token_indices = token_probs_soft.topk(1, dim=1)
         
-        # token_probs_hard = torch.zeros_like(masked_similarities).scatter_(-1, topk_token_indices, 1.0)
-        token_probs = F.gumbel_softmax(masked_similarities, tau=self.temperature, hard=True, dim=-1) # [batch_size, seq_len, vocab_size]
-        # token_probs = token_probs_hard - token_probs_soft.detach() + token_probs_soft
+        token_probs_hard = torch.zeros_like(masked_similarities).scatter_(-1, topk_token_indices, 1.0)
+        # token_probs = F.gumbel_softmax(masked_similarities, tau=self.temperature, hard=True, dim=-1) # [batch_size, seq_len, vocab_size]
+        token_probs = token_probs_hard - token_probs_soft.detach() + token_probs_soft
         
         probs = token_probs * top_k_socres.unsqueeze(-1)
         # labels = top_k_socres.detach().bool().long()
