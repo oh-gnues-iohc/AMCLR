@@ -97,6 +97,16 @@ class DataTrainingArguments:
         default=None,
         metadata={"help": "The name of the dataset to use (via the datasets library)."},
     )
+@dataclass
+class TrainingArgumentsExtended(TrainingArguments):
+    spmd_2d_sharding: Optional[int] = field(
+        default=1,
+        metadata={"help": "The name of the dataset to use (via the datasets library)."},
+    )
+    spmd_dcn_parallelism: Optional[int] = field(
+        default=1,
+        metadata={"help": "The name of the dataset to use (via the datasets library)."},
+    )
     
 def main():
     # See all possible arguments in src/transformers/training_args.py
@@ -104,7 +114,7 @@ def main():
     # We now keep distinct sets of args, for a cleaner separation of concerns.
 
     parser = HfArgumentParser(
-        (ModelArguments, DataTrainingArguments, TrainingArguments)
+        (ModelArguments, DataTrainingArguments, TrainingArgumentsExtended)
     )
     if len(sys.argv) == 2 and sys.argv[1].endswith(".json"):
         # If we pass only one argument to the script and it's the path to a json file,
@@ -213,12 +223,12 @@ def main():
     # replicated along the DCN axis, and inputs and activations should have
     # the batch dimension sharded along the combined DCN and data axes.
     num_devices = xr.global_runtime_device_count()
-    model_axis = max(model_args.spmd_2d_sharding, 1)
+    model_axis = max(training_args.spmd_2d_sharding, 1)
     assert (
         xr.device_type() == "TPU" or xr.device_type() == "CUDA"
     ), f"Supported hardware are TPU and CUDA. Detected hardware: {xr.device_type()}"
     if xr.device_type() == "TPU":
-        dcn_axis = model_args.spmd_dcn_parallelism
+        dcn_axis = training_args.spmd_dcn_parallelism
         data_axis = num_devices // model_axis // dcn_axis
         ici_mesh_shape = (1, data_axis, model_axis)
         dcn_mesh_shape = (dcn_axis, 1, 1)
@@ -238,51 +248,16 @@ def main():
 
     # Update training args with relevant SPMD config
     training_args.spmd_mesh = spmd_mesh
-    training_args.spmd_fsdp_sharding = model_args.spmd_fsdp_sharding
-
     # Replace the linear layer
     from torch_xla.distributed.fsdp.utils import apply_xla_patch_to_nn_linear
 
     model = apply_xla_patch_to_nn_linear(model, xs.xla_patched_nn_linear_forward)
 
-    # Set the dtype, and move to the XLA device when parameters are already initialized
-    if model_args.spmd_defer_init:
-        model = model.to(dtype=getattr(torch, model_args.torch_dtype))
-    else:
-        model = model.to(xm.xla_device(), dtype=getattr(torch, model_args.torch_dtype))
+    model = model.to(xm.xla_device(), dtype=getattr(torch, model_args.torch_dtype))
 
     # Shard each parameter in the model based on the sharding strategy provided.
     for name, param in model.named_parameters():
-        if model_args.spmd_defer_init:
-            with torch.no_grad():
-                param = torch.empty_like(param, device="cpu")
-                # TODO(jonbolin): Currently, deferred initialization ignores any custom
-                # weight initialization in the model.
-                torch.nn.init.uniform_(param, a=-0.05, b=0.05)
-                param = torch.nn.Parameter(param.to(xm.xla_device()))
-                # Find the corresponding module
-                path = name.split(".")
-                module = model
-                for module_name in path[:-1]:
-                    module = dict(module.named_children())[module_name]
-                # Replace the meta tensor parameter with the initialized XLA tensor
-                module.register_parameter(path[-1], param)
-
-        if model_args.spmd_fsdp_sharding:
-            print("> [FSDP] Sharding tensor", name, param.shape, param.dtype)
-            # We don't care about layernorm's weights, and
-            # LLaMA doesn't use biases.
-            if len(param.shape) == 1:
-                continue
-            assert len(param.shape) == 2
-
-            # Shard the largest dimension
-            if param.shape[0] > param.shape[1]:
-                partition_spec = ("data", None)
-            else:
-                partition_spec = (None, "data")
-            xs.mark_sharding(param, spmd_mesh, partition_spec)
-        elif model_args.spmd_2d_sharding > 0:
+        if training_args.spmd_2d_sharding > 0:
             # Apply 2D sharding:
             print("> [2D] Sharding tensor", name, param.shape)
 
