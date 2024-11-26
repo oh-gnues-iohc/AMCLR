@@ -201,7 +201,7 @@ def main():
     lr_scheduler = get_scheduler(
         name=args.lr_scheduler_type,
         optimizer=optimizer,
-        num_warmup_steps=args.num_warmup_steps,
+        num_warmup_steps=args.warmup_steps,
         num_training_steps=args.max_steps
         if overrode_max_train_steps
         else args.max_train_stepss,
