@@ -31,6 +31,8 @@ xr.use_spmd()
 
 logger = logging.getLogger(__name__)
 
+def get_global_rank():
+    return xm.get_ordinal()
 
 MODEL_SIZES = ["small", "base", "large"]
 MODEL_TYPES = ["AMCLR", "ELECTRA", "AMOS"]
@@ -165,7 +167,7 @@ def main():
         train_dataset,
         batch_size=batch_size,
         shuffle=True,
-        collate_fn=collate_fn,
+        collate_fn=None,
     )
 
     # Sharded DataLoader
@@ -217,6 +219,9 @@ def main():
     progress_bar = tqdm(range(training_args.max_steps), disable=not training_args.local_rank == 0)
     completed_steps = 0
     starting_epoch = 0
+    
+    print(get_global_rank())
+    
     progress_bar.update(completed_steps)
     for epoch in range(starting_epoch, args.num_train_epochs):
         model.train()
