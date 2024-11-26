@@ -220,15 +220,10 @@ def main():
     progress_bar.update(completed_steps)
     for epoch in range(starting_epoch, args.num_train_epochs):
         model.train()
-        if args.with_tracking:
-            total_loss = 0
         active_dataloader = train_device_loader
         for step, batch in enumerate(active_dataloader):
             outputs = model(**batch)
             loss = outputs.loss
-            # We keep track of the loss at each epoch
-            if args.with_tracking:
-                total_loss += loss.detach().float()
             loss.backward()
             optimizer.step()
             lr_scheduler.step()
