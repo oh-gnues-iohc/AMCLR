@@ -48,6 +48,7 @@ class DataTrainingArguments:
     )
 
 
+xr.use_spmd()
 def main():
     # Parse arguments
     parser = HfArgumentParser((ModelArguments, DataTrainingArguments, TrainingArguments))
@@ -108,7 +109,6 @@ def main():
 
 def _mp_fn(index):
     # For xla_spawn (TPUs)
-    print(index, index,index, index,index, index,index, index)
     xr.initialize_cache(f'/tmp/xla_cache_{index}', readonly=False)
     main()
 
