@@ -203,8 +203,6 @@ def main():
         optimizer=optimizer,
         num_warmup_steps=args.warmup_steps,
         num_training_steps=args.max_steps
-        if overrode_max_train_steps
-        else args.max_train_stepss,
     )
     
     num_update_steps_per_epoch = math.ceil(len(train_device_loader) / args.gradient_accumulation_steps)
