@@ -384,6 +384,9 @@ class AMCLR(ElectraForPreTraining):
             global_disc_cls_hidden_state = disc_cls_hidden_state
             global_gen_cls_hidden_state = gen_cls_hidden_state
             
+            
+        print(global_gen_cls_hidden_state.shape, logits.shape, local_rank, distributed_world_size)
+            
         positive_idx_per_question = torch.arange(
         global_disc_cls_hidden_state.size(0), device=disc_cls_hidden_state.device
         )
