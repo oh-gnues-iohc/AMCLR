@@ -230,8 +230,6 @@ def main():
         return loss
     import os
 
-    xrt_shard_ordinal = os.getenv("XRT_SHARD_ORDINAL", None)
-    xrt_local_worker = os.getenv("XRT_LOCAL_WORKER", None)
 
     compiled_step_fn = torch_xla.compile(
         step_fn, full_graph=True, name="step_fn")
@@ -241,8 +239,6 @@ def main():
         model.train()
         active_dataloader = train_device_loader
         for step, batch in enumerate(active_dataloader):
-            print(f"Shard Ordinal: {xrt_shard_ordinal}")
-            print(f"Local Worker: {xrt_local_worker}")
             loss = compiled_step_fn(batch)
             
             progress_bar.update(1)
