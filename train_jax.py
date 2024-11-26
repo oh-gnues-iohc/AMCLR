@@ -312,7 +312,7 @@ def main():
                     batch = {k: np.stack([sample[k] for sample in samples]) for k in samples[0].keys()}
     
                     # Shard model inputs across devices
-                    sharding = jax.NamedSharding(mesh, jax.sharding.PartitionSpec('dp'))
+                    sharding = jax.sharding.NamedSharding(mesh, jax.sharding.PartitionSpec('dp'))
                     global_batch_array = jax.make_array_from_process_local_data(
                         sharding, batch)
                     # model_inputs = shard(batch)
