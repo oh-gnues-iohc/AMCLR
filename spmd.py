@@ -108,7 +108,7 @@ def main():
 
     # Set seed before initializing model.
     set_seed(training_args.seed)
-
+    xm.set_rng_state(training_args.seed)
     
     from transformers.models.electra import ElectraConfig
     from datasets import load_dataset, load_from_disk
@@ -227,6 +227,7 @@ def main():
         loss = model(**batch)
         loss.backward()
         optimizer.step()
+        xm.mark_step()
         return loss
     import os
 
@@ -246,13 +247,16 @@ def main():
 
             if isinstance(checkpointing_steps, int):
                 if completed_steps % checkpointing_steps == 0:
+                    xm.wait_device_ops()
                     output_dir = f"step_{completed_steps}"
                     if args.output_dir is not None:
                         output_dir = os.path.join(args.output_dir, output_dir)
                     model.electra.save_pretrained(output_dir)
                     model.generator.save_pretrained(os.path.join(output_dir, "gens"))
-
+                    xm.wait_device_ops()
+                    
             if completed_steps >= args.max_steps:
+                xm.wait_device_ops()
                 break
 
 
