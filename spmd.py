@@ -194,15 +194,15 @@ def main():
 
     overrode_max_train_steps = False
     num_update_steps_per_epoch = math.ceil(len(train_device_loader) / args.gradient_accumulation_steps)
-    if args.max_train_steps is None:
-        args.max_train_steps = args.num_train_epochs * num_update_steps_per_epoch
+    if args.max_steps is None:
+        args.max_steps = args.num_train_epochs * num_update_steps_per_epoch
         overrode_max_train_steps = True
 
     lr_scheduler = get_scheduler(
         name=args.lr_scheduler_type,
         optimizer=optimizer,
         num_warmup_steps=args.num_warmup_steps,
-        num_training_steps=args.max_train_steps
+        num_training_steps=args.max_steps
         if overrode_max_train_steps
         else args.max_train_stepss,
     )
