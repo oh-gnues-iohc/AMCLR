@@ -227,7 +227,8 @@ def main():
         active_dataloader = train_device_loader
         for step, batch in enumerate(active_dataloader):
             outputs = model(**batch)
-            loss = outputs.loss
+            loss = outputs
+            print(loss)
             loss.backward()
             optimizer.step()
             lr_scheduler.step()
