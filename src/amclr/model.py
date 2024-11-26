@@ -231,7 +231,7 @@ class AMCLRMLM(ElectraForMaskedLM):
         mask[:, :, 104:999] = torch.finfo(self.dtype).min
         masked_similarities = similarity + mask #[batch_size, seq_len, vocab_size]
         
-        batch_size, seq_len, hidden_dim = generator_sequence_output.shape
+        # batch_size, seq_len, hidden_dim = generator_sequence_output.shape
 
         # Create special token mask
         is_special = (input_ids.unsqueeze(-1) == self.special_tokens).any(dim=-1)  # [batch_size, seq_len]
@@ -248,7 +248,7 @@ class AMCLRMLM(ElectraForMaskedLM):
         
         masked_scores = scores + score_mask # [batch_size, seq_len]
         
-        y_soft = F.softmax(masked_scores, dim=-1)  # [batch_size, seq_len]
+        y_soft = F.gumbel_softmax(masked_scores, hard=False, dim=-1)
         _, topk_indices = y_soft.topk(self.num_maskings, dim=1)
         
         topk_hard = torch.zeros_like(masked_scores).scatter_(-1, topk_indices, 1.0)
@@ -256,12 +256,12 @@ class AMCLRMLM(ElectraForMaskedLM):
         top_k_socres = topk_hard - y_soft.detach() + y_soft
         
         
-        token_probs_soft = F.softmax((masked_similarities / self.temperature), dim=-1)  # [batch_size, seq_len]
-        _, topk_token_indices = token_probs_soft.topk(1, dim=1)
+        # token_probs_soft = F.softmax((masked_similarities / self.temperature), dim=-1)  # [batch_size, seq_len]
+        # _, topk_token_indices = token_probs_soft.topk(1, dim=1)
         
-        token_probs_hard = torch.zeros_like(masked_similarities).scatter_(-1, topk_token_indices, 1.0)
-        # token_probs = F.gumbel_softmax(masked_similarities, tau=self.temperature, hard=True, dim=-1) # [batch_size, seq_len, vocab_size]
-        token_probs = token_probs_hard - token_probs_soft.detach() + token_probs_soft
+        # token_probs_hard = torch.zeros_like(masked_similarities).scatter_(-1, topk_token_indices, 1.0)
+        token_probs = F.gumbel_softmax(masked_similarities, tau=self.temperature, hard=True, dim=-1) # [batch_size, seq_len, vocab_size]
+        # token_probs = token_probs_hard - token_probs_soft.detach() + token_probs_soft
         
         probs = token_probs * top_k_socres.unsqueeze(-1)
         # labels = top_k_socres.detach().bool().long()
