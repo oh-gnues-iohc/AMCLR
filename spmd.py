@@ -217,7 +217,7 @@ def main():
     # Figure out how many steps we should save the Accelerator states
     checkpointing_steps = args.save_steps
 
-    progress_bar = tqdm(range(training_args.max_steps), disable=not xm.is_master_ordinal())
+    progress_bar = tqdm(range(training_args.max_steps), disable=not (xm.get_local_ordinal() == 0))
     completed_steps = 0
     starting_epoch = 0
     
@@ -239,7 +239,7 @@ def main():
         model.train()
         active_dataloader = train_device_loader
         for step, batch in enumerate(active_dataloader):
-            print(xm.is_master_ordinal())
+            print(xm.get_local_ordinal())
             loss = compiled_step_fn(batch)
             xm.mark_step()
             
