@@ -384,15 +384,18 @@ class AMCLR(ElectraForPreTraining):
             global_disc_cls_hidden_state = disc_cls_hidden_state
             global_gen_cls_hidden_state = gen_cls_hidden_state
             
-        positive_idx_per_question = torch.tensor(list(range(global_disc_cls_hidden_state.size(0)))).to(disc_cls_hidden_state.device)
+        positive_idx_per_question = torch.arange(
+        global_disc_cls_hidden_state.size(0), device=disc_cls_hidden_state.device
+        )
+
         
         loss = None
         if labels is not None:
             loss_fct = nn.BCEWithLogitsLoss(reduction='none')
             disc_label = torch.where(
-                mask_indices,  # 조건
-                torch.tensor(1.0, device=mask_indices.device),  # 조건이 True일 때 값
-                torch.tensor(0.0, device=mask_indices.device)   # 조건이 False일 때 값
+                mask_indices,
+                torch.full_like(mask_indices, 1.0, dtype=torch.float, device=mask_indices.device),
+                torch.full_like(mask_indices, 0.0, dtype=torch.float, device=mask_indices.device),
             )
             disc_loss = loss_fct(logits.view(-1, discriminator_sequence_output.shape[1]), disc_label.float())
             

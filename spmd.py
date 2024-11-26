@@ -241,7 +241,6 @@ def main():
         model.train()
         active_dataloader = train_device_loader
         for step, batch in enumerate(active_dataloader):
-            print(xm.get_local_ordinal())
             loss = compiled_step_fn(batch)
             xm.mark_step()
             
