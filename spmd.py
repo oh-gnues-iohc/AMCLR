@@ -175,7 +175,7 @@ def main():
     train_device_loader = pl.MpDeviceLoader(
         train_loader,
         xm.xla_device(),
-        input_sharding=xs.ShardingSpec(mesh, ('data',)),
+        input_sharding=xs.ShardingSpec(mesh, ('data', None)),
     )
     args = training_args
     model = disc.to(xm.xla_device())
