@@ -172,11 +172,10 @@ def main():
 
     # Sharded DataLoader
     import torch_xla.distributed.parallel_loader as pl
-    partition_spec = range(num_devices)
     train_device_loader = pl.MpDeviceLoader(
         train_loader,
         xm.xla_device(),
-        input_sharding=xs.ShardingSpec(mesh, partition_spec),
+        input_sharding=xs.ShardingSpec(mesh, ('data',)),
     )
     args = training_args
     model = disc.to(xm.xla_device())
@@ -228,6 +227,7 @@ def main():
         active_dataloader = train_device_loader
         for step, batch in enumerate(active_dataloader):
             optimizer.zero_grad()
+            print(batch["input_ids"].shape)
             outputs = model(**batch)
             loss = outputs
             print(loss)
