@@ -90,7 +90,6 @@ def main():
 
     log_level = training_args.get_process_log_level()
     logger.setLevel(log_level)
-    datasets.utils.logging.set_verbosity(log_level)
     transformers.utils.logging.set_verbosity(log_level)
     transformers.utils.logging.enable_default_handler()
     transformers.utils.logging.enable_explicit_format()
@@ -144,7 +143,37 @@ def main():
     mesh = xs.Mesh(device_ids, mesh_shape, ('data',))
     batch_size = num_devices * training_args.per_device_train_batch_size
     
-    print(mesh, batch_size)
+    logger.info(f"SPMD Mesh: {mesh}, Batch size: {batch_size}")
+
+    # Dataset preparation
+    def collate_fn(batch):
+        return {
+            "input_ids": torch.tensor([x["input_ids"] for x in batch]),
+            "attention_mask": torch.tensor([x["attention_mask"] for x in batch]),
+            "labels": torch.tensor([x["labels"] for x in batch]),
+        }
+
+
+    train_dataset = datasets.with_format("torch")
+
+    # DataLoader
+    from torch.utils.data import DataLoader
+
+    train_loader = DataLoader(
+        train_dataset,
+        batch_size=batch_size,
+        shuffle=True,
+        collate_fn=collate_fn,
+    )
+
+    # Sharded DataLoader
+    import torch_xla.distributed.parallel_loader as pl
+    train_device_loader = pl.MpDeviceLoader(
+        train_loader,
+        xm.xla_device(),
+        input_sharding=xs.ShardingSpec(mesh, ("data", None, None)),
+    )
+    print(train_device_loader[0])
 
 
     # trainer = Trainer(
