@@ -422,8 +422,23 @@ class AMCLR(ElectraForPreTraining):
         return ((loss,) + output) if loss is not None else output
         # return loss
 
-    def save_pretrained(self, dirs, state_dict, safe_serialization,is_main_process):
+    def save_pretrained(
+        self,
+        save_directory: Union[str, os.PathLike],
+        is_main_process: bool = True,
+        state_dict: Optional[dict] = None,
+        save_function: Callable = torch.save,
+        push_to_hub: bool = False,
+        max_shard_size: Union[int, str] = "5GB",
+        safe_serialization: bool = True,
+        variant: Optional[str] = None,
+        token: Optional[Union[str, bool]] = None,
+        save_peft_format: bool = True,
+        **kwargs,
+    ):
         import os
-        if is_main_process:
-            self.electra.save_pretrained(dirs)
-            self.generator.save_pretrained(os.path.join(dirs, "generator"))
+        self.electra.save_pretrained(save_directory, is_main_process, state_dict, save_function, push_to_hub, max_shard_size, safe_serialization, variant, token, save_peft_format)
+        self.electra.save_pretrained(os.path.join(save_directory, "generator"), is_main_process, state_dict, save_function, push_to_hub, max_shard_size, safe_serialization, variant, token, save_peft_format)
+        # if is_main_process:
+        #     self.electra.save_pretrained(save_directory)
+        #     self.generator.save_pretrained()
