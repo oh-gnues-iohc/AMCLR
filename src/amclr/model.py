@@ -276,13 +276,19 @@ def grad_multiply(x, lambd=-1):
     return GradMultiply.apply(x, lambd)
 
 
+def unwrap_model(model):
+    if hasattr(model, "module"):
+        return unwrap_model(model.module)
+    else:
+        return model
+
 class AMCLR(ElectraForPreTraining):
 
     def __init__(self, config, special_token_ids, generator):
         super().__init__(config)
         self.config = config
         self.special_token_ids = special_token_ids
-        self.generator = gvienerator
+        self.generator = generator
         self.set_input_embeddings(self.generator.get_input_embeddings())
         
         self.electra.embeddings.position_embeddings = self.generator.electra.embeddings.position_embeddings
@@ -421,45 +427,44 @@ class AMCLR(ElectraForPreTraining):
         output = (None,)
         return ((loss,) + output) if loss is not None else output
         # return loss
-        
-    def save_pretrained(
-        self,
-        save_directory: Union[str, os.PathLike],
-        is_main_process: bool = True,
-        state_dict: Optional[dict] = None,
-        save_function: Callable = torch.save,
-        push_to_hub: bool = False,
-        max_shard_size: Union[int, str] = "5GB",
-        safe_serialization: bool = True,
-        variant: Optional[str] = None,
-        token: Optional[Union[str, bool]] = None,
-        save_peft_format: bool = True,
-        **kwargs,
-    ):
-        import os
-        self.electra.save_pretrained(
-            save_directory,
-            is_main_process=is_main_process,
-            state_dict=state_dict,
-            save_function=save_function,
-            push_to_hub=push_to_hub,
-            max_shard_size=max_shard_size,
-            safe_serialization=safe_serialization,
-            variant=variant,
-            token=token,
-            save_peft_format=save_peft_format,
-            **kwargs,  # 추가 인자 전달
-        )
-        self.generator.save_pretrained(
-            os.path.join(save_directory, "generator"),
-            is_main_process=is_main_process,
-            state_dict=state_dict,
-            save_function=save_function,
-            push_to_hub=push_to_hub,
-            max_shard_size=max_shard_size,
-            safe_serialization=safe_serialization,
-            variant=variant,
-            token=token,
-            save_peft_format=save_peft_format,
-            **kwargs,  # 추가 인자 전달
-        )
+    # def save_pretrained(
+    #     self,
+    #     save_directory: Union[str, os.PathLike],
+    #     is_main_process: bool = True,
+    #     state_dict: Optional[dict] = None,
+    #     save_function: Callable = torch.save,
+    #     push_to_hub: bool = False,
+    #     max_shard_size: Union[int, str] = "5GB",
+    #     safe_serialization: bool = True,
+    #     variant: Optional[str] = None,
+    #     token: Optional[Union[str, bool]] = None,
+    #     save_peft_format: bool = True,
+    #     **kwargs,
+    # ):
+    #     import os
+    #     unwrap_model(self.electra).save_pretrained(
+    #         save_directory,
+    #         is_main_process=is_main_process,
+    #         state_dict=state_dict,
+    #         save_function=save_function,
+    #         push_to_hub=push_to_hub,
+    #         max_shard_size=max_shard_size,
+    #         safe_serialization=safe_serialization,
+    #         variant=variant,
+    #         token=token,
+    #         save_peft_format=save_peft_format,
+    #         **kwargs,  # 추가 인자 전달
+    #     )
+    #     unwrap_model(self.generator).save_pretrained(
+    #         os.path.join(save_directory, "generator"),
+    #         is_main_process=is_main_process,
+    #         state_dict=state_dict,
+    #         save_function=save_function,
+    #         push_to_hub=push_to_hub,
+    #         max_shard_size=max_shard_size,
+    #         safe_serialization=safe_serialization,
+    #         variant=variant,
+    #         token=token,
+    #         save_peft_format=save_peft_format,
+    #         **kwargs,  # 추가 인자 전달
+    #     )
