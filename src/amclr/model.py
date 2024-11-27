@@ -177,9 +177,10 @@ class AMCLRMLM(ElectraForMaskedLM):
     def __init__(self, config, special_token_ids):
         super().__init__(config)
         self.special_token_ids = special_token_ids
-        self.masking_ratio = 0.15
+        masking_ratio = 0.15
         self.temperature = 0.3
         self.generator_score_head = nn.Linear(config.embedding_size, 1)
+        self.num_maskings = max(int(512 * masking_ratio), 1)
         
         self.post_init()
 
@@ -233,7 +234,6 @@ class AMCLRMLM(ElectraForMaskedLM):
         non_special_mask = (~is_special).float()
 
         # Calculate number of tokens to swap
-        num_maskings = max(int(seq_len * self.masking_ratio), 1)
         
         score_mask = torch.zeros_like(scores)
         
@@ -245,7 +245,7 @@ class AMCLRMLM(ElectraForMaskedLM):
         masked_scores = scores + score_mask # [batch_size, seq_len]
         
         y_soft = F.gumbel_softmax(masked_scores, hard=False, dim=-1) # [batch_size, seq_len]
-        _, topk_indices = y_soft.topk(num_maskings, dim=1)
+        _, topk_indices = y_soft.topk(self.num_maskings, dim=1)
         
         topk_hard = torch.zeros_like(masked_scores).scatter_(-1, topk_indices, 1.0)
 
@@ -422,7 +422,8 @@ class AMCLR(ElectraForPreTraining):
         return ((loss,) + output) if loss is not None else output
         # return loss
 
-    def save_pretrained(self, dirs, state_dict, safe_serialization):
+    def save_pretrained(self, dirs, state_dict, safe_serialization,is_main_process):
         import os
-        self.electra.save_pretrained(dirs)
-        self.generator.save_pretrained(os.path.join(dirs, "generator"))
+        if is_main_process:
+            self.electra.save_pretrained(dirs)
+            self.generator.save_pretrained(os.path.join(dirs, "generator"))
