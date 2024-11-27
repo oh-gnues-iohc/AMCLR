@@ -282,7 +282,7 @@ class AMCLR(ElectraForPreTraining):
         super().__init__(config)
         self.config = config
         self.special_token_ids = special_token_ids
-        self.generator = generator
+        self.generator = gvienerator
         self.set_input_embeddings(self.generator.get_input_embeddings())
         
         self.electra.embeddings.position_embeddings = self.generator.electra.embeddings.position_embeddings
@@ -421,7 +421,7 @@ class AMCLR(ElectraForPreTraining):
         output = (None,)
         return ((loss,) + output) if loss is not None else output
         # return loss
-
+        
     def save_pretrained(
         self,
         save_directory: Union[str, os.PathLike],
@@ -437,8 +437,29 @@ class AMCLR(ElectraForPreTraining):
         **kwargs,
     ):
         import os
-        self.electra.save_pretrained(save_directory, is_main_process, state_dict, save_function, push_to_hub, max_shard_size, safe_serialization, variant, token, save_peft_format)
-        self.electra.save_pretrained(os.path.join(save_directory, "generator"), is_main_process, state_dict, save_function, push_to_hub, max_shard_size, safe_serialization, variant, token, save_peft_format)
-        # if is_main_process:
-        #     self.electra.save_pretrained(save_directory)
-        #     self.generator.save_pretrained()
+        self.electra.save_pretrained(
+            save_directory,
+            is_main_process=is_main_process,
+            state_dict=state_dict,
+            save_function=save_function,
+            push_to_hub=push_to_hub,
+            max_shard_size=max_shard_size,
+            safe_serialization=safe_serialization,
+            variant=variant,
+            token=token,
+            save_peft_format=save_peft_format,
+            **kwargs,  # 추가 인자 전달
+        )
+        self.generator.save_pretrained(
+            os.path.join(save_directory, "generator"),
+            is_main_process=is_main_process,
+            state_dict=state_dict,
+            save_function=save_function,
+            push_to_hub=push_to_hub,
+            max_shard_size=max_shard_size,
+            safe_serialization=safe_serialization,
+            variant=variant,
+            token=token,
+            save_peft_format=save_peft_format,
+            **kwargs,  # 추가 인자 전달
+        )
