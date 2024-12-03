@@ -207,6 +207,12 @@ class AMCLR_TF(TFElectraForPreTraining):
             config.vocab_size]` (see `input_ids` docstring) Tokens with indices set to `-100` are ignored (masked), the
             loss is only computed for the tokens with labels in `[0, ..., config.vocab_size]`
         """ 
+        if isinstance(input_ids, dict):
+            inputs = input_ids
+            input_ids = inputs.get('input_ids')
+            attention_mask = inputs.get('attention_mask')
+            token_type_ids = inputs.get('token_type_ids')
+            
         tf.print("Inside call method")
         tf.print(input_ids)
         generator_hidden_states = self.electr_for_generator(
