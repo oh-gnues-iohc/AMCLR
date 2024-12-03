@@ -70,7 +70,7 @@ def main():
         }
         labels = tf.cast(parsed_features["labels"], tf.int32)
         
-        return inputs, labels  # (inputs_dict, labels)
+        return (inputs, labels)  # (inputs_dict, labels)
     
     NUM_EPOCHS = math.ceil(TRAIN_STEPS / (100000 / GLOBAL_BATCH_SIZE))  # 예: 100,000 샘플을 256 배치로 => ~390 에포크
     
