@@ -264,7 +264,7 @@ class AMCLR_TF(TFElectraForPreTraining):
             axis=1
         )
         masking_scores_hard = tf.stop_gradient(masking_scores_hard - masking_scores_soft) + masking_scores_soft
-        disc_labels = tf.cast(masking_scores_hard, tf.int32)
+        disc_labels = tf.cast(masking_scores_hard, tf.float32)
         
         masking_scores_hard = tf.expand_dims(masking_scores_hard, axis=-1)
         
