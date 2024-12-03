@@ -59,20 +59,14 @@ def main():
             "input_ids": tf.io.FixedLenFeature((512,), dtype=tf.int64),
             "attention_mask": tf.io.FixedLenFeature((512,), dtype=tf.int64),
             "token_type_ids": tf.io.FixedLenFeature((512,), dtype=tf.int64),
-            "labels": tf.io.FixedLenFeature((512,), dtype=tf.int64),
         }
         parsed_features = tf.io.parse_single_example(sample, features)
         
-        parsed_features["labels"] = tf.zeros_like(parsed_features["labels"], dtype=tf.int64)
+        # 더미 라벨 생성 (모든 라벨을 0으로 설정)
+        labels = tf.zeros((512,), dtype=tf.int64)
         
-        inputs = {
-            "input_ids": tf.cast(parsed_features["input_ids"], tf.int32),
-            "attention_mask": tf.cast(parsed_features["attention_mask"], tf.int32),
-            "token_type_ids": tf.cast(parsed_features["token_type_ids"], tf.int32)
-        }
-        labels = tf.cast(parsed_features["labels"], tf.int32)
-        
-        return inputs, labels  # (inputs_dict, labels)
+        # 입력과 라벨을 분리하여 반환
+        return (parsed_features, labels)
     
     NUM_EPOCHS = math.ceil(TRAIN_STEPS / (100000 / GLOBAL_BATCH_SIZE))  # 예: 100,000 샘플을 256 배치로 => ~390 에포크
     
