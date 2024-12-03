@@ -234,7 +234,6 @@ class AMCLR_TF(TFElectraForPreTraining):
         )
 
         mask_special_tokens_expanded = tf.reshape(mask_special_tokens, [1, 1, -1])
-        print(input_ids[0], prediction_scores[0])
         mask_input_ids = tf.one_hot(input_ids, depth=self.config.vocab_size, dtype=tf.bool)
 
         total_mask = mask_special_tokens_expanded | mask_input_ids
