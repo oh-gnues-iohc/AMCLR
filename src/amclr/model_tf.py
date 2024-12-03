@@ -59,9 +59,9 @@ class AMCLRConfig(ElectraConfig):
 
 
 @tf.custom_gradient
-def grad_multiply(x, lambd=-1.0):
+def grad_multiply(x):
     def grad(dy):
-        return dy * lambd
+        return dy * -1
     return x, grad
 
 def gumbel_softmax(logits, temperature, hard=False):
@@ -292,7 +292,7 @@ class AMCLR_TF(TFElectraForPreTraining):
         
         masking_scores_hard = tf.expand_dims(masking_scores_hard, axis=-1)
         probs = masking_scores_hard * prediction_scores_hard
-        probs = grad_multiply(probs, -1.0)
+        probs = grad_multiply(probs)
         
         embedding_weight = self.get_input_embeddings().weight
         replaced_embeds = tf.matmul(probs, embedding_weight)
