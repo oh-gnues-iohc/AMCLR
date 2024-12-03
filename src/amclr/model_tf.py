@@ -207,14 +207,6 @@ class AMCLR_TF(TFElectraForPreTraining):
             config.vocab_size]` (see `input_ids` docstring) Tokens with indices set to `-100` are ignored (masked), the
             loss is only computed for the tokens with labels in `[0, ..., config.vocab_size]`
         """ 
-        if isinstance(input_ids, dict):
-            inputs = input_ids
-            input_ids = inputs.get('input_ids')
-            attention_mask = inputs.get('attention_mask')
-            token_type_ids = inputs.get('token_type_ids')
-            
-        tf.print("Inside call method")
-        tf.print(input_ids)
         generator_hidden_states = self.electr_for_generator(
             input_ids=input_ids,
             attention_mask=attention_mask,
@@ -240,12 +232,9 @@ class AMCLR_TF(TFElectraForPreTraining):
             updates=tf.ones_like(special_token_ids_tensor, dtype=tf.bool),
             shape=[self.config.vocab_size]
         )
-        tf.print("Inside call method")
-        tf.print(input_ids[0])
-        tf.print(prediction_scores[0])
-
         mask_special_tokens_expanded = tf.reshape(mask_special_tokens, [1, 1, -1])
-        mask_input_ids = tf.one_hot(input_ids, depth=self.config.vocab_size, dtype=tf.bool)
+        mask_input_ids = tf.cast(tf.one_hot(input_ids, depth=self.config.vocab_size, dtype=tf.int32), tf.bool)
+
 
         total_mask = mask_special_tokens_expanded | mask_input_ids
 
