@@ -147,7 +147,7 @@ class Myoutput(ModelOutput):
             heads.
     """
 
-    loss: tf.Tensor | None = None
+    loss: tf.Tensor
 
 class AMCLR_TF(TFElectraForPreTraining):
     def __init__(self, config, special_token_ids, **kwargs):
