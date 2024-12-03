@@ -369,8 +369,6 @@ class AMCLR(ElectraForPreTraining):
             global_disc_cls_hidden_state = []
             global_gen_cls_hidden_state = []
             
-            
-            
             all_q_vectors = all_gather(disc_cls_hidden_state.detach())
             all_c_vectors = all_gather(gen_cls_hidden_state.detach())
 
