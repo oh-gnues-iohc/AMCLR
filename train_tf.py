@@ -59,12 +59,14 @@ def main():
             "input_ids": tf.io.FixedLenFeature((512,), dtype=tf.int64),
             "attention_mask": tf.io.FixedLenFeature((512,), dtype=tf.int64),
             "token_type_ids": tf.io.FixedLenFeature((512,), dtype=tf.int64),
-            "labels": tf.io.FixedLenFeature((1,), dtype=tf.int64),
         }
         parsed_features = tf.io.parse_single_example(sample, features)
-        # parsed_features["labels"] = tf.zeros_like(parsed_features["labels"], dtype=tf.int64)
         
-        return tf.io.parse_single_example(sample, features)
+        # 더미 라벨 생성 (모든 라벨을 0으로 설정)
+        labels = tf.zeros((1,), dtype=tf.int64)
+        
+        # 입력과 라벨을 분리하여 반환
+        return (parsed_features, labels)
     
     NUM_EPOCHS = math.ceil(TRAIN_STEPS / (100000 / GLOBAL_BATCH_SIZE))  # 예: 100,000 샘플을 256 배치로 => ~390 에포크
     
