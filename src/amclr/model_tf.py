@@ -320,12 +320,13 @@ class AMCLR_TF(TFElectraForPreTraining):
         logits = self.discriminator_predictions(discriminator_sequence_output)
         
         
+        loss_fn = tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True, reduction=tf.keras.losses.Reduction.NONE)
+    
+        unmasked_loss = loss_fn(disc_labels, logits)
         weights = tf.cast(attention_mask, tf.float32)
-        losses = tf.nn.sigmoid_cross_entropy_with_logits(
-            logits=logits, labels=disc_labels) * weights
-        per_example_loss = (tf.reduce_sum(losses, axis=-1) /
-                            (1e-6 + tf.reduce_sum(weights, axis=-1)))
-        disc_loss = tf.reduce_sum(losses) / (1e-6 + tf.reduce_sum(weights))
+        masked_loss = unmasked_loss * weights
+        disc_loss = tf.reduce_sum(masked_loss) / tf.reduce_sum(weights)
+            
         
         disc_cls = discriminator_sequence_output[:, 0]
         disc_cls = self.discriminator_project(disc_cls)
@@ -365,7 +366,7 @@ class AMCLR_TF(TFElectraForPreTraining):
             
         similarity = tf.matmul(disc_cls_all, gen_cls_all, transpose_b=True)
         labels = tf.range(global_batch_size)
-        sims_loss = tf.nn.sparse_softmax_cross_entropy_with_logits(labels=labels, logits=similarity)
+        sims_loss = loss_fn(labels, similarity)
         sims_loss = tf.reduce_mean(sims_loss)
         
         loss = disc_loss * self.l1 + sims_loss * self.l2
