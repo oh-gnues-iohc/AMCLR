@@ -58,11 +58,10 @@ def main():
         features = {
             "input_ids": tf.io.FixedLenFeature((512,), dtype=tf.int64),
             "attention_mask": tf.io.FixedLenFeature((512,), dtype=tf.int64),
-            "token_type_ids": tf.io.FixedLenFeature((1,), dtype=tf.int64),
+            "token_type_ids": tf.io.FixedLenFeature((512,), dtype=tf.int64),
+            "labels": tf.io.FixedLenFeature((1,), dtype=tf.int64),
         }
         parsed_features = tf.io.parse_single_example(sample, features)
-        
-        parsed_features["labels"] = tf.zeros_like(parsed_features["labels"], dtype=tf.int64)
         
         inputs = {
             "input_ids": tf.cast(parsed_features["input_ids"], tf.int32),
