@@ -323,7 +323,7 @@ class AMCLR_TF(TFElectraForPreTraining):
     
         unmasked_loss = loss_fn(disc_labels, logits)
         weights = tf.cast(attention_mask, tf.float32)
-        masked_loss = unmasked_loss * weights
+        masked_loss = unmasked_loss * tf.expand_dims(weights, axis=-1)
         disc_loss = tf.reduce_sum(masked_loss) / tf.reduce_sum(weights)
             
         
