@@ -208,7 +208,7 @@ class AMCLR_TF(TFElectraForPreTraining):
             loss is only computed for the tokens with labels in `[0, ..., config.vocab_size]`
         """ 
         tf.print("Inside call method")
-        tf.print(input_ids[0])
+        tf.print(input_ids)
         generator_hidden_states = self.electr_for_generator(
             input_ids=input_ids,
             attention_mask=attention_mask,
