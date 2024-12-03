@@ -79,7 +79,7 @@ class TFElectraMainLayerNonEmbeddings(TFElectraMainLayer):
     config_class = ElectraConfig
 
     def __init__(self, config, embeddings, **kwargs):
-        super().__init__(**kwargs)
+        super().__init__(config, **kwargs)
 
         self.config = config
         self.is_decoder = config.is_decoder
@@ -106,7 +106,7 @@ class TFElectraMainLayerNonEmbeddings(TFElectraMainLayer):
 
 class AMCLRProject(TFElectraGeneratorPredictions):
     def __init__(self, config, **kwargs):
-        super().__init__(**kwargs)
+        super().__init__(config, **kwargs)
 
         self.dense = keras.layers.Dense(config.g_hidden_size, name="dense")
         self.config = config
