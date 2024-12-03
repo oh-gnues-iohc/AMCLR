@@ -370,7 +370,7 @@ class AMCLR_TF(TFElectraForPreTraining):
         
         loss = disc_loss * self.l1 + sims_loss * self.l2
         return TFMaskedLMOutput(
-            loss=loss,
+            loss=tf.reshape(loss, (1,)),
             logits=prediction_scores,
             hidden_states=generator_hidden_states.hidden_states,
             attentions=generator_hidden_states.attentions,
