@@ -7,6 +7,7 @@ from src.amclr.model_tf import AMCLR_TF, AMCLRConfig
 from transformers import AutoTokenizer
 import os
 import math
+import tensorflow_addons as tfa
 
 # 커스텀 AMCLRConfig, AMCLR_TF 클래스 정의
 # 이미 정의되어 있다고 가정합니다.
