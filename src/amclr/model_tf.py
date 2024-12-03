@@ -291,7 +291,7 @@ class AMCLR_TF(TFElectraForPreTraining):
         disc_labels = tf.cast(masking_scores_hard, tf.float32)
         
         masking_scores_hard = tf.expand_dims(masking_scores_hard, axis=-1)
-        
+        print(tf.shape(masking_scores_hard))
         probs = masking_scores_hard * prediction_scores_hard
         probs = grad_multiply(probs, -1.0)
         
