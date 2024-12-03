@@ -63,11 +63,11 @@ def main():
         parsed_features = tf.io.parse_single_example(sample, features)
         return parsed_features
     
-    NUM_EPOCHS = math.ceil(TRAIN_STEPS / (100000 / GLOBAL_BATCH_SIZE))  # 예: 100,000 샘플을 256 배치로 => ~390 에포크
+    NUM_EPOCHS = math.ceil(TRAIN_STEPS / (34258796 / GLOBAL_BATCH_SIZE))  # 예: 100,000 샘플을 256 배치로 => ~390 에포크
     
     tf_dataset = tf.data.TFRecordDataset(["gs://tempbb/dataset.tfrecords"])
     tf_dataset = tf_dataset.map(decode_fn)
-    tf_dataset = tf_dataset.shuffle(34258796).batch(GLOBAL_BATCH_SIZE, drop_remainder=True)
+    tf_dataset = tf_dataset.shuffle(100000).batch(GLOBAL_BATCH_SIZE, drop_remainder=True)
     
     with strategy.scope():
         # 모델 설정
