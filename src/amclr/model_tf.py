@@ -291,7 +291,6 @@ class AMCLR_TF(TFElectraForPreTraining):
         disc_labels = tf.cast(masking_scores_hard, tf.float32)
         
         masking_scores_hard = tf.expand_dims(masking_scores_hard, axis=-1)
-        print(tf.shape(masking_scores_hard))
         probs = masking_scores_hard * prediction_scores_hard
         probs = grad_multiply(probs, -1.0)
         
@@ -319,8 +318,8 @@ class AMCLR_TF(TFElectraForPreTraining):
         discriminator_sequence_output = discriminator_hidden_states[0]
         logits = self.discriminator_predictions(discriminator_sequence_output)
         
-        
-        loss_fn = tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True, reduction=tf.keras.losses.Reduction.NONE)
+         
+        loss_fn = tf.keras.losses.BinaryCrossentropy(from_logits=True, reduction=tf.keras.losses.Reduction.NONE)
     
         unmasked_loss = loss_fn(disc_labels, logits)
         weights = tf.cast(attention_mask, tf.float32)
@@ -363,7 +362,7 @@ class AMCLR_TF(TFElectraForPreTraining):
             disc_cls_all = disc_cls
             gen_cls_all = gen_cls
             global_batch_size = tf.shape(disc_cls_all)[0]
-            
+        loss_fn = tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True, reduction=tf.keras.losses.Reduction.NONE)
         similarity = tf.matmul(disc_cls_all, gen_cls_all, transpose_b=True)
         labels = tf.range(global_batch_size)
         sims_loss = loss_fn(labels, similarity)
