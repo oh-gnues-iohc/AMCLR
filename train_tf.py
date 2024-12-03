@@ -93,9 +93,15 @@ def main():
             epsilon=1e-6
         )
         
+        def dummy_loss(y_true, y_pred):
+            if y_pred.shape.rank <= 1:
+                return y_pred
+            else:
+                reduction_axes = list(range(1, y_pred.shape.rank))
+                return tf.reduce_mean(y_pred, axis=reduction_axes)
         
         # 모델 컴파일
-        model.compile(optimizer=optimizer)
+        model.compile(optimizer=optimizer, loss=dummy_loss)
         
     
     # 체크포인트 및 TensorBoard 콜백 정의
