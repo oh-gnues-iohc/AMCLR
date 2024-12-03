@@ -101,7 +101,7 @@ def main():
                 return tf.reduce_mean(y_pred, axis=reduction_axes)
         
         # 모델 컴파일
-        model.compile(optimizer=optimizer, loss=dummy_loss)
+        model.compile(optimizer=optimizer)
         
     
     # 체크포인트 및 TensorBoard 콜백 정의
