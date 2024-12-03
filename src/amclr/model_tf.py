@@ -369,5 +369,5 @@ class AMCLR_TF(TFElectraForPreTraining):
         sims_loss = tf.reduce_mean(sims_loss)
         
         loss = disc_loss * self.l1 + sims_loss * self.l2
-        
+        print(loss)
         return Myoutput(loss=loss)
