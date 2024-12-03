@@ -134,8 +134,8 @@ class AMCLR_TF(TFElectraForPreTraining):
         self.electra = TFElectraMainLayer(config, name="electra")
         self.discriminator_predictions = TFElectraDiscriminatorPredictions(config, name="discriminator_predictions")
         self.discriminator_project = AMCLRProject(config, name="disc_projection")
-        
-        g_config = config.copy()
+        from copy import deepcopy
+        g_config = deepcopy(config)
         g_config.hidden_size = config.g_hidden_size
         g_config.num_attention_heads = config.g_num_attention_heads
         g_config.intermediate_size = config.g_intermediate_size
