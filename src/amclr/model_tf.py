@@ -189,16 +189,16 @@ class AMCLR_TF(TFElectraForPreTraining):
     
     def call(
         self,
-        input_ids: TFModelInputType | None = None,
-        attention_mask: np.ndarray | tf.Tensor | None = None,
-        token_type_ids: np.ndarray | tf.Tensor | None = None,
-        position_ids: np.ndarray | tf.Tensor | None = None,
-        head_mask: np.ndarray | tf.Tensor | None = None,
-        inputs_embeds: np.ndarray | tf.Tensor | None = None,
+        input_ids = None,
+        attention_mask= None,
+        token_type_ids= None,
+        position_ids= None,
+        head_mask= None,
+        inputs_embeds= None,
         output_attentions: Optional[bool] = None,
         output_hidden_states: Optional[bool] = None,
         return_dict: Optional[bool] = None,
-        labels: np.ndarray | tf.Tensor | None = None,
+        labels= None,
         training: Optional[bool] = False,
     ):
         r"""
