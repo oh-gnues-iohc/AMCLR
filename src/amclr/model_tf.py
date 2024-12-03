@@ -198,7 +198,6 @@ class AMCLR_TF(TFElectraForPreTraining):
         output_attentions: Optional[bool] = None,
         output_hidden_states: Optional[bool] = None,
         return_dict: Optional[bool] = None,
-        labels= None,
         training: Optional[bool] = False,
     ):
         r"""
