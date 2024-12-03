@@ -104,15 +104,9 @@ def main():
             epsilon=1e-6
         )
         
-        # 더미 손실 함수 정의
-        def dummy_loss(y_true, y_pred):
-            """
-            모델이 반환하는 y_pred는 손실 값이므로, y_true는 사용하지 않습니다.
-            """
-            return y_pred  # y_pred는 모델에서 반환된 손실 값입니다.
         
         # 모델 컴파일
-        model.compile(optimizer=optimizer, loss=dummy_loss)
+        model.compile(optimizer=optimizer)
         
     
     # 체크포인트 및 TensorBoard 콜백 정의
