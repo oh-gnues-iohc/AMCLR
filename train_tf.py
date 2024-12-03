@@ -49,7 +49,7 @@ def main():
     
     # 데이터셋 생성
     
-    GLOBAL_BATCH_SIZE = 256  # 총 배치 사이즈 (각 GPU당 64 배치)
+    GLOBAL_BATCH_SIZE = 128  # 총 배치 사이즈 (각 GPU당 64 배치)
     
     TRAIN_STEPS = 766000  # Base 모델의 Train Steps (ELECTRA 기준)
     WARMUP_STEPS = 10000
