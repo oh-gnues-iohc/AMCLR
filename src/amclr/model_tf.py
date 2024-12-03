@@ -219,7 +219,7 @@ class AMCLR_TF(TFElectraForPreTraining):
             training=training,
         )
         special_token_ids_tensor = tf.constant(self.special_token_ids, dtype=tf.int32)
-        
+        print(input_ids)
         
         generator_sequence_output = generator_hidden_states[0]
         prediction_scores = self.generator_predictions(generator_sequence_output, training=training)
