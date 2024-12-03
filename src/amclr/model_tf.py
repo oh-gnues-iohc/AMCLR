@@ -252,7 +252,7 @@ class AMCLR_TF(TFElectraForPreTraining):
         # special_tokens_mask_expanded = tf.expand_dims(special_tokens_mask, axis=-1)
 
         masking_scores = tf.where(special_tokens_mask, self.min_value, masking_scores) # batch, seq_len, 1
-        masking_scores = tf.squeeze(masking_scores, axis=-1) # batch, seq_len
+        # masking_scores = tf.squeeze(masking_scores, axis=-1) # batch, seq_len
         
         num_maskings = 77  # Number of tokens to mask
         _, topk_indices = tf.math.top_k(masking_scores, k=num_maskings)
