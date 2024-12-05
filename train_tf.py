@@ -44,12 +44,15 @@ class WarmUpLinearDecay(tf.keras.optimizers.schedules.LearningRateSchedule):
         
 def main():
     # 4개의 GPU를 사용하기 위해 MirroredStrategy 설정
-    strategy = tf.distribute.MirroredStrategy(devices=["/gpu:0", "/gpu:1", "/gpu:2", "/gpu:3"])
+    resolver = tf.distribute.cluster_resolver.TPUClusterResolver()
+    tf.config.experimental_connect_to_cluster(resolver)
+    tf.tpu.experimental.initialize_tpu_system(resolver)
+    strategy = tf.distribute.TPUStrategy(resolver)
     print('Number of devices: {}'.format(strategy.num_replicas_in_sync))
     
     # 데이터셋 생성
     
-    GLOBAL_BATCH_SIZE = 128  # 총 배치 사이즈 (각 GPU당 64 배치)
+    GLOBAL_BATCH_SIZE = 256  # 총 배치 사이즈 (각 GPU당 64 배치)
     
     TRAIN_STEPS = 766000  # Base 모델의 Train Steps (ELECTRA 기준)
     WARMUP_STEPS = 10000
@@ -63,11 +66,11 @@ def main():
         parsed_features = tf.io.parse_single_example(sample, features)
         return parsed_features
     
-    NUM_EPOCHS = math.ceil(TRAIN_STEPS / (34258796 / GLOBAL_BATCH_SIZE))  # 예: 100,000 샘플을 256 배치로 => ~390 에포크
+    NUM_EPOCHS = math.ceil(TRAIN_STEPS / (34_258_796 / GLOBAL_BATCH_SIZE))  # 예: 100,000 샘플을 256 배치로 => ~390 에포크
     
     tf_dataset = tf.data.TFRecordDataset(["gs://tempbb/dataset.tfrecords"])
     tf_dataset = tf_dataset.map(decode_fn)
-    tf_dataset = tf_dataset.shuffle(100000).batch(GLOBAL_BATCH_SIZE, drop_remainder=True)
+    tf_dataset = tf_dataset.shuffle(10_000_000).batch(GLOBAL_BATCH_SIZE, drop_remainder=True)
     
     with strategy.scope():
         # 모델 설정
