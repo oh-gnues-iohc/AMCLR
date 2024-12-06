@@ -201,6 +201,9 @@ def main():
     tf_dataset = tf.data.TFRecordDataset(["gs://tempbb/dataset.tfrecords"])
     tf_dataset = tf_dataset.map(decode_fn)
     tf_dataset = tf_dataset.shuffle(10_000_000).batch(GLOBAL_BATCH_SIZE, drop_remainder=True)
+    tf_dataset = tf_dataset.apply(
+        tf.data.experimental.assert_cardinality(34_258_796 // GLOBAL_BATCH_SIZE)
+    )
     
     with strategy.scope():
         # 모델 설정
@@ -211,21 +214,6 @@ def main():
         # 모델 인스턴스 생성
         model = AMCLR_TF(config, special_token_ids)
         
-        # learning_rate_schedule = WarmUp(
-        #     initial_learning_rate=2e-4,
-        #     decay_schedule_fn =None,
-        #     warmup_steps=WARMUP_STEPS,
-        #     total_steps=TRAIN_STEPS
-        # )
-        
-        # # AdamW 옵티마이저 정의
-        # optimizer = AdamWeightDecay(
-        #     learning_rate=learning_rate_schedule,
-        #     weight_decay_rate=0.01,
-        #     beta_1=0.9,
-        #     beta_2=0.999,
-        #     epsilon=1e-6
-        # )
         
         optimizer, lr_schedule = create_optimizer(
             init_lr=2e-4,
