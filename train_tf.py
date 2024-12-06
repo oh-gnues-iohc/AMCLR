@@ -8,8 +8,8 @@ from transformers import AutoTokenizer
 import os
 import math
 import wandb
-from wandb.integration.keras3 import WandbMetricsLogger
-from wandb.integration.keras3 import WandbModelCheckpoint
+from wandb.integration.keras import WandbMetricsLogger
+from wandb.integration.keras import WandbModelCheckpoint
 
 # 커스텀 AMCLRConfig, AMCLR_TF 클래스 정의
 # 이미 정의되어 있다고 가정합니다.
