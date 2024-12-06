@@ -107,13 +107,6 @@ def main():
     checkpoint_dir = './checkpoints'
     os.makedirs(checkpoint_dir, exist_ok=True)
     
-    checkpoint_callback = WandbModelCheckpoint(
-        filepath=os.path.join(checkpoint_dir, 'model.{epoch:02d}-{loss:.2f}.keras'),
-        monitor='loss',
-        mode='min',
-        save_freq="epoch"
-    )
-    
     wandb.init(
         project="your_project_name",  # 프로젝트 이름
         name="experiment_name",  # 실험 이름
@@ -125,6 +118,14 @@ def main():
             "epochs": NUM_EPOCHS,
         },
     )
+    
+    checkpoint_callback = WandbModelCheckpoint(
+        filepath=os.path.join(checkpoint_dir, 'model.{epoch:02d}-{loss:.2f}.keras'),
+        monitor='loss',
+        mode='min',
+        save_freq="epoch"
+    )
+    
     wandb_callback = WandbMetricsLogger()
     # 모델 학습
     model.fit(
