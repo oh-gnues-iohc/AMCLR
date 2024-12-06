@@ -116,7 +116,7 @@ def main():
         },
     )
     
-    checkpoint_callback = WandbModelCheckpoint(
+    checkpoint_callback = tf.keras.callbacks.ModelCheckpoint(
         filepath=os.path.join(checkpoint_dir, 'model.{epoch:02d}-{loss:.2f}.keras'),
         monitor='loss',
         mode='min',
