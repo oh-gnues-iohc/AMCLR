@@ -108,7 +108,7 @@ def main():
     os.makedirs(checkpoint_dir, exist_ok=True)
     
     checkpoint_callback = tf.keras.callbacks.ModelCheckpoint(
-        filepath=os.path.join(checkpoint_dir, 'model.{epoch:02d}-{loss:.2f}.h5'),
+        filepath=os.path.join(checkpoint_dir, 'model.{epoch:02d}-{loss:.2f}.keras'),
         save_best_only=True,
         monitor='loss',
         mode='min'
