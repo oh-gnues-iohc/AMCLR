@@ -107,11 +107,11 @@ def main():
     checkpoint_dir = './checkpoints'
     os.makedirs(checkpoint_dir, exist_ok=True)
     
-    checkpoint_callback = tf.keras.callbacks.ModelCheckpoint(
-        filepath=os.path.join(checkpoint_dir, 'model.{epoch:02d}-{loss:.2f}.keras'),
-        save_best_only=True,
+    checkpoint_callback = WandbModelCheckpoint(
+        filepath=os.path.join(checkpoint_dir, 'model.{epoch:02d}-{loss:.2f}'),
         monitor='loss',
-        mode='min'
+        mode='min',
+        save_freq="epoch"
     )
     
     wandb.init(
