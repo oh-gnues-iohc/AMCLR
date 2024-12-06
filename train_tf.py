@@ -7,7 +7,6 @@ from src.amclr.model_tf import AMCLR_TF, AMCLRConfig
 from transformers import AutoTokenizer
 import os
 import math
-import tensorflow_addons as tfa
 
 # 커스텀 AMCLRConfig, AMCLR_TF 클래스 정의
 # 이미 정의되어 있다고 가정합니다.
@@ -88,7 +87,7 @@ def main():
         )
         
         # AdamW 옵티마이저 정의
-        optimizer = tfa.optimizers.AdamW(
+        optimizer = tf.keras.optimizers.AdamW(
             learning_rate=learning_rate_schedule,
             weight_decay=0.01,
             beta_1=0.9,
