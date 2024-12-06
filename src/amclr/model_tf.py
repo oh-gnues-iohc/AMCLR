@@ -362,6 +362,7 @@ class AMCLR_TF(TFElectraForPreTraining):
             disc_cls_all = disc_cls
             gen_cls_all = gen_cls
             global_batch_size = tf.shape(disc_cls_all)[0]
+        tf.print(global_batch_size)
         loss_fn = tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True, reduction=tf.keras.losses.Reduction.NONE)
         similarity = tf.matmul(disc_cls_all, gen_cls_all, transpose_b=True)
         labels = tf.range(global_batch_size)
