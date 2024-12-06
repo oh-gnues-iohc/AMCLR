@@ -3,9 +3,6 @@ import numpy as np
 from wandb.integration.keras import WandbMetricsLogger
 from wandb.integration.keras import WandbModelCheckpoint
 from transformers import AdamWeightDecay
-from transformers.models.electra.modeling_tf_electra import *
-from transformers.models.electra import ElectraConfig
-from transformers.modeling_tf_utils import *
 from src.amclr.model_tf import AMCLR_TF, AMCLRConfig
 from transformers import AutoTokenizer
 import os
