@@ -204,6 +204,11 @@ def main():
     tf_dataset = tf_dataset.apply(
         tf.data.experimental.assert_cardinality(34_258_796 // GLOBAL_BATCH_SIZE)
     )
+    options = tf.data.Options()
+    options.experimental_distribute.auto_shard_policy = tf.data.experimental.AutoShardPolicy.DATA
+
+    # 옵션을 데이터셋에 적용
+    tf_dataset = tf_dataset.with_options(options)
     
     with strategy.scope():
         # 모델 설정
