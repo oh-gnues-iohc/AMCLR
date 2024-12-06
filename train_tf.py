@@ -227,7 +227,7 @@ def main():
         #     epsilon=1e-6
         # )
         
-        optimizer = create_optimizer(
+        optimizer, lr_schedule = create_optimizer(
             init_lr=2e-4,
             num_train_steps=TRAIN_STEPS,
             num_warmup_steps=WARMUP_STEPS,
