@@ -100,7 +100,7 @@ def main():
         
     
     # 체크포인트 및 TensorBoard 콜백 정의
-    checkpoint_dir = './checkpoints'
+    checkpoint_dir = '~/checkpoints'
     os.makedirs(checkpoint_dir, exist_ok=True)
     
     checkpoint_callback = tf.keras.callbacks.ModelCheckpoint(
@@ -110,7 +110,7 @@ def main():
         mode='min'
     )
     
-    tensorboard_log_dir = './logs'
+    tensorboard_log_dir = '~/logs'
     os.makedirs(tensorboard_log_dir, exist_ok=True)
     
     tensorboard_callback = tf.keras.callbacks.TensorBoard(
