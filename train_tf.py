@@ -1,7 +1,6 @@
-import tensorflow as tf
+import tensorflow as tf, tf_keras
 import numpy as np
 from wandb.integration.keras import WandbMetricsLogger
-from wandb.integration.keras import WandbModelCheckpoint
 from transformers import AdamWeightDecay
 from src.amclr.model_tf import AMCLR_TF, AMCLRConfig
 from transformers import AutoTokenizer
@@ -116,7 +115,7 @@ def main():
         },
     )
     
-    checkpoint_callback = tf.keras.callbacks.ModelCheckpoint(
+    checkpoint_callback = tf_keras.callbacks.ModelCheckpoint(
         filepath=os.path.join(checkpoint_dir, 'model.{epoch:02d}-{loss:.2f}.keras'),
         monitor='loss',
         mode='min',
