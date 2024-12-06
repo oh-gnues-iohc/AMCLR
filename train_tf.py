@@ -108,7 +108,7 @@ def main():
     os.makedirs(checkpoint_dir, exist_ok=True)
     
     checkpoint_callback = WandbModelCheckpoint(
-        filepath=os.path.join(checkpoint_dir, 'model.{epoch:02d}-{loss:.2f}'),
+        filepath=os.path.join(checkpoint_dir, 'model.{epoch:02d}-{loss:.2f}.keras'),
         monitor='loss',
         mode='min',
         save_freq="epoch"
