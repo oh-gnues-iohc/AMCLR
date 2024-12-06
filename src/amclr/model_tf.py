@@ -3,9 +3,6 @@ from transformers.models.electra import ElectraConfig
 from transformers.modeling_tf_utils import *
 import tensorflow as tf
 
-@tf.function
-def debug_print(global_batch_size):
-    tf.print("Global Batch Size:", global_batch_size)
 
 class AMCLRConfig(ElectraConfig):
     def __init__(
@@ -336,37 +333,31 @@ class AMCLR_TF(TFElectraForPreTraining):
         gen_cls = generator_sequence_output[:, 0]
         
         replica_ctx = tf.distribute.get_replica_context()
-        if replica_ctx is not None:
-            disc_cls_all = replica_ctx.all_gather(disc_cls, axis=0)
-            gen_cls_all = replica_ctx.all_gather(gen_cls, axis=0)
-            
-            local_batch_size = tf.shape(disc_cls)[0]
-            global_batch_size = tf.shape(disc_cls_all)[0]
-            
-            replica_id = replica_ctx.replica_id_in_sync_group
-            num_replicas = replica_ctx.num_replicas_in_sync
-            
-            start_idx = replica_id * local_batch_size
-            end_idx = start_idx + local_batch_size
-            
-            indices = tf.range(global_batch_size)
-            is_local = (indices >= start_idx) & (indices < end_idx)
-            
-            disc_cls_all = tf.where(
-                tf.expand_dims(is_local, -1),
-                disc_cls_all,  # Keep local entries as is
-                tf.stop_gradient(disc_cls_all)  # Stop gradients on non-local entries
-            )
-            gen_cls_all = tf.where(
-                tf.expand_dims(is_local, -1),
-                gen_cls_all,  # Keep local entries as is
-                tf.stop_gradient(gen_cls_all)  # Stop gradients on non-local entries
-            )
-        else:
-            disc_cls_all = disc_cls
-            gen_cls_all = gen_cls
-            global_batch_size = tf.shape(disc_cls_all)[0]
-        debug_print(global_batch_size)
+        disc_cls_all = replica_ctx.all_gather(disc_cls, axis=0)
+        gen_cls_all = replica_ctx.all_gather(gen_cls, axis=0)
+        
+        local_batch_size = tf.shape(disc_cls)[0]
+        global_batch_size = tf.shape(disc_cls_all)[0]
+        
+        replica_id = replica_ctx.replica_id_in_sync_group
+        num_replicas = replica_ctx.num_replicas_in_sync
+        
+        start_idx = replica_id * local_batch_size
+        end_idx = start_idx + local_batch_size
+        
+        indices = tf.range(global_batch_size)
+        is_local = (indices >= start_idx) & (indices < end_idx)
+        
+        disc_cls_all = tf.where(
+            tf.expand_dims(is_local, -1),
+            disc_cls_all,  # Keep local entries as is
+            tf.stop_gradient(disc_cls_all)  # Stop gradients on non-local entries
+        )
+        gen_cls_all = tf.where(
+            tf.expand_dims(is_local, -1),
+            gen_cls_all,  # Keep local entries as is
+            tf.stop_gradient(gen_cls_all)  # Stop gradients on non-local entries
+        )
         loss_fn = tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True, reduction=tf.keras.losses.Reduction.NONE)
         similarity = tf.matmul(disc_cls_all, gen_cls_all, transpose_b=True)
         labels = tf.range(global_batch_size)
