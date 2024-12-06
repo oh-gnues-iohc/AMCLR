@@ -44,7 +44,7 @@ class WarmUpLinearDecay(tf.keras.optimizers.schedules.LearningRateSchedule):
         
 def main():
     # 4개의 GPU를 사용하기 위해 MirroredStrategy 설정
-    resolver = tf.distribute.cluster_resolver.TPUClusterResolver()
+    resolver = tf.distribute.cluster_resolver.TPUClusterResolver("node-1")
     tf.config.experimental_connect_to_cluster(resolver)
     tf.tpu.experimental.initialize_tpu_system(resolver)
     strategy = tf.distribute.TPUStrategy(resolver)
