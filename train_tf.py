@@ -10,6 +10,7 @@ import math
 import wandb
 from wandb.integration.keras import WandbMetricsLogger
 from wandb.integration.keras import WandbModelCheckpoint
+from transformers import AdamWeightDecay
 
 # 커스텀 AMCLRConfig, AMCLR_TF 클래스 정의
 # 이미 정의되어 있다고 가정합니다.
@@ -90,9 +91,9 @@ def main():
         )
         
         # AdamW 옵티마이저 정의
-        optimizer = tf.keras.optimizers.AdamW(
+        optimizer = AdamWeightDecay(
             learning_rate=learning_rate_schedule,
-            weight_decay=0.01,
+            weight_decay_rate=0.01,
             beta_1=0.9,
             beta_2=0.999,
             epsilon=1e-6
