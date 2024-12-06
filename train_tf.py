@@ -1,5 +1,8 @@
 import tensorflow as tf
 import numpy as np
+from wandb.integration.keras import WandbMetricsLogger
+from wandb.integration.keras import WandbModelCheckpoint
+from transformers import AdamWeightDecay
 from transformers.models.electra.modeling_tf_electra import *
 from transformers.models.electra import ElectraConfig
 from transformers.modeling_tf_utils import *
@@ -8,9 +11,6 @@ from transformers import AutoTokenizer
 import os
 import math
 import wandb
-from wandb.integration.keras import WandbMetricsLogger
-from wandb.integration.keras import WandbModelCheckpoint
-from transformers import AdamWeightDecay
 
 # 커스텀 AMCLRConfig, AMCLR_TF 클래스 정의
 # 이미 정의되어 있다고 가정합니다.
