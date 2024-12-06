@@ -90,7 +90,7 @@ def main():
         )
         
         # AdamW 옵티마이저 정의
-        optimizer = tf.keras.optimizers.AdamW(
+        optimizer = tf.keras.optimizers.legacy.AdamW(
             learning_rate=learning_rate_schedule,
             weight_decay=0.01,
             beta_1=0.9,
