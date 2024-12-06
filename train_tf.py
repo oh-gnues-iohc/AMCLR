@@ -7,6 +7,8 @@ from src.amclr.model_tf import AMCLR_TF, AMCLRConfig
 from transformers import AutoTokenizer
 import os
 import math
+import wandb
+from wandb.keras import WandbCallback
 
 # 커스텀 AMCLRConfig, AMCLR_TF 클래스 정의
 # 이미 정의되어 있다고 가정합니다.
@@ -100,7 +102,7 @@ def main():
         
     
     # 체크포인트 및 TensorBoard 콜백 정의
-    checkpoint_dir = '~/checkpoints'
+    checkpoint_dir = './checkpoints'
     os.makedirs(checkpoint_dir, exist_ok=True)
     
     checkpoint_callback = tf.keras.callbacks.ModelCheckpoint(
@@ -110,19 +112,23 @@ def main():
         mode='min'
     )
     
-    tensorboard_log_dir = '~/logs'
-    os.makedirs(tensorboard_log_dir, exist_ok=True)
-    
-    tensorboard_callback = tf.keras.callbacks.TensorBoard(
-        log_dir=tensorboard_log_dir,
-        histogram_freq=1
+    wandb.init(
+        project="your_project_name",  # 프로젝트 이름
+        name="experiment_name",  # 실험 이름
+        config={  # 하이퍼파라미터 로깅
+            "learning_rate": 2e-4,
+            "batch_size": GLOBAL_BATCH_SIZE,
+            "train_steps": TRAIN_STEPS,
+            "warmup_steps": WARMUP_STEPS,
+            "epochs": NUM_EPOCHS,
+        },
     )
-    
+    wandb_callback = WandbCallback()
     # 모델 학습
     model.fit(
         tf_dataset,
         epochs=NUM_EPOCHS,
-        callbacks=[checkpoint_callback, tensorboard_callback]
+        callbacks=[checkpoint_callback, wandb_callback]
     )
 
 if __name__ == "__main__":
