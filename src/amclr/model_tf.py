@@ -3,6 +3,10 @@ from transformers.models.electra import ElectraConfig
 from transformers.modeling_tf_utils import *
 import tensorflow as tf
 
+@tf.function
+def debug_print(global_batch_size):
+    tf.print("Global Batch Size:", global_batch_size)
+
 class AMCLRConfig(ElectraConfig):
     def __init__(
         self,
@@ -362,7 +366,7 @@ class AMCLR_TF(TFElectraForPreTraining):
             disc_cls_all = disc_cls
             gen_cls_all = gen_cls
             global_batch_size = tf.shape(disc_cls_all)[0]
-        tf.print(global_batch_size)
+        debug_print(global_batch_size)
         loss_fn = tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True, reduction=tf.keras.losses.Reduction.NONE)
         similarity = tf.matmul(disc_cls_all, gen_cls_all, transpose_b=True)
         labels = tf.range(global_batch_size)
