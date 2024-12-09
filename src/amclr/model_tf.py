@@ -185,6 +185,7 @@ class AMCLR_TF(TFElectraForPreTraining):
     def get_prefix_bias_name(self):
         warnings.warn("The method get_prefix_bias_name is deprecated. Please use `get_bias` instead.", FutureWarning)
         return self.name + "/" + self.generator_lm_head.name
+    
     def build(self, input_shape=None):
         if self.built:
             return

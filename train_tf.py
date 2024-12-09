@@ -206,7 +206,7 @@ def main():
         special_token_ids = tokenizer.all_special_ids
         
         # 모델 인스턴스 생성
-        model = AMCLR_TF.from_pretrained("./ours_base", special_token_ids)
+        model = AMCLR_TF(config, special_token_ids)
         
         
         optimizer, lr_schedule = create_optimizer(
