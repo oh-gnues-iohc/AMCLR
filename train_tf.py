@@ -209,6 +209,7 @@ def main():
         model = AMCLR_TF(config, special_token_ids)
         
         
+        
         optimizer, lr_schedule = create_optimizer(
             init_lr=2e-4,
             num_train_steps=TRAIN_STEPS,
