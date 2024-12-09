@@ -189,7 +189,7 @@ def main():
     TRAIN_STEPS = 802_938
     tf_dataset = tf.data.TFRecordDataset(["gs://tempbb/dataset.tfrecords"])
     tf_dataset = tf_dataset.map(decode_fn)
-    tf_dataset = tf_dataset.shuffle(34_258_796).batch(GLOBAL_BATCH_SIZE, drop_remainder=True)
+    tf_dataset = tf_dataset.shuffle(10_000_000).batch(GLOBAL_BATCH_SIZE, drop_remainder=True)
     tf_dataset = tf_dataset.apply(
         tf.data.experimental.assert_cardinality(34_258_796 // GLOBAL_BATCH_SIZE)
     )
