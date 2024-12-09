@@ -163,94 +163,12 @@ class WarmUpLinearDecay(tf.keras.optimizers.schedules.LearningRateSchedule):
         }
         
 def main():
-    resolver = tf.distribute.cluster_resolver.TPUClusterResolver("node-1")
-    tf.config.experimental_connect_to_cluster(resolver)
-    tf.tpu.experimental.initialize_tpu_system(resolver)
-    strategy = tf.distribute.TPUStrategy(resolver)
-    print('Number of devices: {}'.format(strategy.num_replicas_in_sync))
+    config = AMCLRConfig.from_pretrained("google/electra-base-discriminator")
+    tokenizer = AutoTokenizer.from_pretrained("google/electra-base-discriminator")
+    special_token_ids = tokenizer.all_special_ids
     
-    # 데이터셋 생성
-    
-    GLOBAL_BATCH_SIZE = 256  # 총 배치 사이즈 (각 GPU당 64 배치)
-    
-    TRAIN_STEPS = 766_000  # Base 모델의 Train Steps (ELECTRA 기준)
-    WARMUP_STEPS = 10000
-    
-    def decode_fn(sample):
-        features = {
-            "input_ids": tf.io.FixedLenFeature((512,), dtype=tf.int64),
-            "attention_mask": tf.io.FixedLenFeature((512,), dtype=tf.int64),
-            "token_type_ids": tf.io.FixedLenFeature((512,), dtype=tf.int64),
-        }
-        parsed_features = tf.io.parse_single_example(sample, features)
-        return parsed_features
-    
-    NUM_EPOCHS = math.ceil(TRAIN_STEPS / (34_258_796 / GLOBAL_BATCH_SIZE))  # 예: 100,000 샘플을 256 배치로 => ~390 에포크
-    TRAIN_STEPS = 802_938
-    tf_dataset = tf.data.TFRecordDataset(["gs://tempbb/dataset.tfrecords"])
-    tf_dataset = tf_dataset.map(decode_fn)
-    tf_dataset = tf_dataset.shuffle(34_258_796).batch(GLOBAL_BATCH_SIZE, drop_remainder=True)
-    tf_dataset = tf_dataset.apply(
-        tf.data.experimental.assert_cardinality(34_258_796 // GLOBAL_BATCH_SIZE)
-    )
-    options = tf.data.Options()
-    options.experimental_distribute.auto_shard_policy = tf.data.experimental.AutoShardPolicy.DATA
-
-    # 옵션을 데이터셋에 적용
-    tf_dataset = tf_dataset.with_options(options)
-    
-    with strategy.scope():
-        # 모델 설정
-        config = AMCLRConfig.from_pretrained("google/electra-base-discriminator")
-        tokenizer = AutoTokenizer.from_pretrained("google/electra-base-discriminator")
-        special_token_ids = tokenizer.all_special_ids
-        
-        # 모델 인스턴스 생성
-        model = AMCLR_TF(config, special_token_ids)
-        
-        
-        optimizer, lr_schedule = create_optimizer(
-            init_lr=2e-4,
-            num_train_steps=TRAIN_STEPS,
-            num_warmup_steps=WARMUP_STEPS,
-            adam_epsilon=1e-6,
-            weight_decay_rate=0.01
-        )
-        
-        # 모델 컴파일
-        model.compile(optimizer=optimizer)
-        
-    
-    # 체크포인트 및 TensorBoard 콜백 정의
-    checkpoint_dir = './checkpoints'
-    os.makedirs(checkpoint_dir, exist_ok=True)
-    
-    wandb.init(
-        project="your_project_name",  # 프로젝트 이름
-        name="experiment_name",  # 실험 이름
-        config={  # 하이퍼파라미터 로깅
-            "learning_rate": 2e-4,
-            "batch_size": GLOBAL_BATCH_SIZE,
-            "train_steps": TRAIN_STEPS,
-            "warmup_steps": WARMUP_STEPS,
-            "epochs": NUM_EPOCHS,
-        },
-    )
-    
-    checkpoint_callback = tf_keras.callbacks.ModelCheckpoint(
-        filepath=os.path.join(checkpoint_dir, 'model.{epoch:02d}-{loss:.2f}.keras'),
-        monitor='loss',
-        mode='min',
-        save_freq="epoch"
-    )
-    
-    wandb_callback = WandbMetricsLogger(log_freq="batch")
-    # 모델 학습
-    model.fit(
-        tf_dataset,
-        epochs=NUM_EPOCHS,
-        callbacks=[checkpoint_callback, wandb_callback]
-    )
+    model = AMCLR_TF(config, special_token_ids)
+    model.save_pretrained("./ours_base/")
 
 if __name__ == "__main__":
     main()
