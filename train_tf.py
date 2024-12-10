@@ -239,14 +239,14 @@ def main():
         filepath=os.path.join(checkpoint_dir, 'model.{epoch:02d}-{loss:.2f}.keras'),
         monitor='loss',
         mode='min',
-        save_freq="epoch"
+        save_freq=76600
     )
     
     wandb_callback = WandbMetricsLogger(log_freq="batch")
     model.fit(
         tf_dataset,
         epochs=1,
-        steps_per_epoch=TRAIN_STEPS
+        steps_per_epoch=TRAIN_STEPS,
         callbacks=[checkpoint_callback, wandb_callback]
     )
 
