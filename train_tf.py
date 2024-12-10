@@ -185,8 +185,6 @@ def main():
         parsed_features = tf.io.parse_single_example(sample, features)
         return parsed_features
     
-    NUM_EPOCHS = math.ceil(TRAIN_STEPS / (34_258_796 / GLOBAL_BATCH_SIZE))  # 예: 100,000 샘플을 256 배치로 => ~390 에포크
-    TRAIN_STEPS = 802_938
     tf_dataset = tf.data.TFRecordDataset(["gs://tempbb/dataset.tfrecords"])
     tf_dataset = tf_dataset.map(decode_fn)
     tf_dataset = tf_dataset.shuffle(10_000_000).batch(GLOBAL_BATCH_SIZE, drop_remainder=True)
@@ -233,7 +231,7 @@ def main():
             "batch_size": GLOBAL_BATCH_SIZE,
             "train_steps": TRAIN_STEPS,
             "warmup_steps": WARMUP_STEPS,
-            "epochs": NUM_EPOCHS,
+            "epochs": 1,
         },
     )
     
@@ -245,10 +243,10 @@ def main():
     )
     
     wandb_callback = WandbMetricsLogger(log_freq="batch")
-    # 모델 학습
     model.fit(
         tf_dataset,
-        epochs=NUM_EPOCHS,
+        epochs=1,
+        steps_per_epoch=TRAIN_STEPS
         callbacks=[checkpoint_callback, wandb_callback]
     )
 
