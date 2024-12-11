@@ -188,9 +188,10 @@ def main():
     tf_dataset = tf.data.TFRecordDataset(["gs://tempbb/dataset.tfrecords"])
     tf_dataset = tf_dataset.map(decode_fn)
     tf_dataset = tf_dataset.shuffle(10_000_000).batch(GLOBAL_BATCH_SIZE, drop_remainder=True)
-    tf_dataset = tf_dataset.apply(
-        tf.data.experimental.assert_cardinality(34_258_796 // GLOBAL_BATCH_SIZE)
-    )
+    tf_dataset = tf_dataset.repeat()  # 무한 반복
+    
+    tf_dataset = tf_dataset.prefetch(buffer_size=tf.data.experimental.AUTOTUNE)  # Prefetch 추가
+
     options = tf.data.Options()
     options.experimental_distribute.auto_shard_policy = tf.data.experimental.AutoShardPolicy.DATA
 
@@ -236,7 +237,7 @@ def main():
     )
     
     checkpoint_callback = tf_keras.callbacks.ModelCheckpoint(
-        filepath=os.path.join(checkpoint_dir, 'model.{epoch:02d}-{loss:.2f}.keras'),
+        filepath=os.path.join(checkpoint_dir, 'model.step-{step:06d}.keras'),
         monitor='loss',
         mode='min',
         save_freq=76600
