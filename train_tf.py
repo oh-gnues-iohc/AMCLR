@@ -13,7 +13,6 @@ from typing import Any, Dict, Optional, Union
 import wandb
 from wandb.integration.keras.keras import patch_tf_keras
 from wandb.sdk.lib import telemetry
-
 if sys.version_info >= (3, 8):
     from typing import Literal
 else:
@@ -220,14 +219,13 @@ def main():
         model.compile(optimizer=optimizer)
         
     
-    # 체크포인트 및 TensorBoard 콜백 정의
     checkpoint_dir = './checkpoints'
     os.makedirs(checkpoint_dir, exist_ok=True)
     
     wandb.init(
-        project="your_project_name",  # 프로젝트 이름
-        name="experiment_name",  # 실험 이름
-        config={  # 하이퍼파라미터 로깅
+        project="your_project_name",
+        name="experiment_name",
+        config={
             "learning_rate": 2e-4,
             "batch_size": GLOBAL_BATCH_SIZE,
             "train_steps": TRAIN_STEPS,
@@ -237,7 +235,7 @@ def main():
     )
     
     checkpoint_callback = tf_keras.callbacks.ModelCheckpoint(
-        filepath=os.path.join(checkpoint_dir, 'model.step-{step:06d}.keras'),
+        filepath=os.path.join(checkpoint_dir, 'model.step-{batch:06d}.keras'),
         monitor='loss',
         mode='min',
         save_freq=76600
