@@ -372,3 +372,175 @@ class AMCLR_TF(TFElectraForPreTraining):
             hidden_states=generator_hidden_states.hidden_states,
             attentions=generator_hidden_states.attentions,
         )
+
+
+
+class ELECTRA(TFElectraForPreTraining):
+    def __init__(self, config, special_token_ids, **kwargs):
+        super().__init__(config, **kwargs)
+        self.special_token_ids = special_token_ids
+        self.min_value = tf.float32.min
+
+        self.electra = TFElectraMainLayer(config, name="electra")
+        self.discriminator_predictions = TFElectraDiscriminatorPredictions(config, name="discriminator_predictions")
+        
+        from copy import deepcopy
+        g_config = deepcopy(config)
+        g_config.hidden_size = config.g_hidden_size
+        g_config.num_attention_heads = config.g_num_attention_heads
+        g_config.intermediate_size = config.g_intermediate_size
+        
+        self.electr_for_generator = TFElectraMainLayerNonEmbeddings(g_config, self.electra.embeddings, name="generator_electra")
+        self.generator_predictions = TFElectraGeneratorPredictions(g_config, name="generator_predictions")
+        
+        
+        self.l1 = 50
+        self.l2 = 1
+
+        if isinstance(config.hidden_act, str):
+            self.activation = get_tf_activation(config.hidden_act)
+        else:
+            self.activation = config.hidden_act
+
+        self.generator_lm_head = TFElectraMaskedLMHead(g_config, self.electra.embeddings, name="generator_lm_head")
+
+    def get_lm_head(self):
+        return self.generator_lm_head
+
+    def get_prefix_bias_name(self):
+        warnings.warn("The method get_prefix_bias_name is deprecated. Please use `get_bias` instead.", FutureWarning)
+        return self.name + "/" + self.generator_lm_head.name
+    
+    def build(self, input_shape=None):
+        if self.built:
+            return
+        self.built = True
+        if getattr(self, "electra", None) is not None:
+            with tf.name_scope(self.electra.name):
+                self.electra.build(None)
+        if getattr(self, "discriminator_predictions", None) is not None:
+            with tf.name_scope(self.discriminator_predictions.name):
+                self.discriminator_predictions.build(None)
+        if getattr(self, "discriminator_project", None) is not None:
+            with tf.name_scope(self.discriminator_project.name):
+                self.discriminator_project.build(None)
+        if getattr(self, "electr_for_generator", None) is not None:
+            with tf.name_scope(self.electr_for_generator.name):
+                self.electr_for_generator.build(None)
+        if getattr(self, "generator_predictions", None) is not None:
+            with tf.name_scope(self.generator_predictions.name):
+                self.generator_predictions.build(None)
+        if getattr(self, "score_predictions", None) is not None:
+            with tf.name_scope(self.score_predictions.name):
+                self.score_predictions.build(None)
+        if getattr(self, "generator_lm_head", None) is not None:
+            with tf.name_scope(self.generator_lm_head.name):
+                self.generator_lm_head.build(None)
+
+    @unpack_inputs
+    def call(
+        self,
+        input_ids = None,
+        attention_mask= None,
+        token_type_ids= None,
+        position_ids= None,
+        head_mask= None,
+        inputs_embeds= None,
+        output_attentions: Optional[bool] = None,
+        output_hidden_states: Optional[bool] = None,
+        return_dict: Optional[bool] = None,
+        training: Optional[bool] = False,
+    ):
+        r"""
+        labels (`tf.Tensor` of shape `(batch_size, sequence_length)`, *optional*):
+            Labels for computing the masked language modeling loss. Indices should be in `[-100, 0, ...,
+            config.vocab_size]` (see `input_ids` docstring) Tokens with indices set to `-100` are ignored (masked), the
+            loss is only computed for the tokens with labels in `[0, ..., config.vocab_size]`
+        """ 
+        num_maskings = 77
+        
+        special_token_mask = tf.reduce_any(
+            tf.equal(tf.expand_dims(input_ids, -1), tf.constant(self.special_token_ids, dtype=input_ids.dtype)),
+            axis=-1,
+        )
+        
+        non_special_indices = tf.where(~special_token_mask)
+        
+        shuffled_indices = tf.random.shuffle(non_special_indices)
+        selected_indices = shuffled_indices[:num_maskings]
+
+    
+        labels = tf.fill(tf.shape(input_ids), tf.constant(-100, dtype=input_ids.dtype))
+        labels = tf.tensor_scatter_nd_update(labels, selected_indices, tf.gather_nd(input_ids, selected_indices))
+
+        # Update input_ids with mask_token_id at selected indices
+        masked_input_ids = tf.tensor_scatter_nd_update(
+            input_ids, 
+            selected_indices, 
+            tf.fill([tf.shape(selected_indices)[0]], tf.constant(103, dtype=input_ids.dtype))
+        )
+        
+        generator_hidden_states = self.electr_for_generator(
+            input_ids=masked_input_ids,
+            attention_mask=attention_mask,
+            token_type_ids=token_type_ids,
+            position_ids=position_ids,
+            head_mask=head_mask,
+            inputs_embeds=inputs_embeds,
+            output_attentions=output_attentions,
+            output_hidden_states=output_hidden_states,
+            return_dict=return_dict,
+            training=training,
+        )
+        special_token_ids_tensor = tf.constant(self.special_token_ids, dtype=tf.int32)
+        
+        generator_sequence_output = generator_hidden_states[0]
+        prediction_scores = self.generator_predictions(generator_sequence_output, training=training)
+        prediction_scores = self.generator_lm_head(prediction_scores, training=training)
+        
+        
+        loss_fn = keras.losses.SparseCategoricalCrossentropy(from_logits=True, reduction=keras.losses.Reduction.NONE)
+        
+        unmasked_loss = loss_fn(tf.nn.relu(labels), logits)
+        # make sure only labels that are not equal to -100 affect the loss
+        loss_mask = tf.cast(labels != -100, dtype=unmasked_loss.dtype)
+        masked_loss = unmasked_loss * loss_mask
+        mlm_masked_loss = tf.reduce_sum(masked_loss) / tf.reduce_sum(loss_mask)
+        
+        masked_positions = tf.equal(masked_input_ids, 103)
+        predicted_token_ids = tf.argmax(prediction_scores, axis=-1, output_type=tf.int32)
+        updated_input_ids = tf.where(masked_positions, predicted_token_ids, masked_input_ids)
+        
+        discriminator_hidden_states = self.electra(
+            input_ids=updated_input_ids,
+            attention_mask=attention_mask,
+            token_type_ids=token_type_ids,
+            position_ids=position_ids,
+            head_mask=head_mask,
+            inputs_embeds=inputs_embeds,
+            output_attentions=output_attentions,
+            output_hidden_states=output_hidden_states,
+            return_dict=return_dict,
+            training=training,
+        )
+        discriminator_sequence_output = discriminator_hidden_states[0]
+        logits = self.discriminator_predictions(discriminator_sequence_output)
+        
+         
+        loss_fn = tf.keras.losses.BinaryCrossentropy(from_logits=True, reduction=tf.keras.losses.Reduction.NONE)
+    
+        disc_labels = tf.where(masked_positions, tf.zeros_like(masked_input_ids), tf.ones_like(masked_input_ids))
+        
+        unmasked_loss = loss_fn(disc_labels, logits)
+        weights = tf.cast(attention_mask, tf.float32)
+        masked_loss = unmasked_loss * tf.expand_dims(weights, axis=-1)
+        disc_loss = tf.reduce_sum(masked_loss) / tf.reduce_sum(weights)
+            
+        
+        loss = disc_loss * self.l1 + mlm_masked_loss * self.l2
+        return TFMaskedLMOutput(
+            loss=tf.reshape(loss, (1,)),
+            logits=prediction_scores,
+            hidden_states=generator_hidden_states.hidden_states,
+            attentions=generator_hidden_states.attentions,
+        )
