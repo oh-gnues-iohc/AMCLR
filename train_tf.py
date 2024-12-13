@@ -72,7 +72,7 @@ class WandbMetricsLogger(tf_keras.callbacks.Callback):
             tel.feature.keras_metrics_logger = True
 
         if log_freq == "batch":
-            log_freq = 1000
+            log_freq = 5000
 
         self.logging_batch_wise = isinstance(log_freq, int)
         self.log_freq: Any = log_freq if self.logging_batch_wise else None
@@ -238,7 +238,7 @@ def main():
         filepath=os.path.join(checkpoint_dir, 'model.step-{batch:06d}.keras'),
         monitor='loss',
         mode='min',
-        save_freq=76600
+        save_freq=766000
     )
     
     wandb_callback = WandbMetricsLogger(log_freq="batch")
