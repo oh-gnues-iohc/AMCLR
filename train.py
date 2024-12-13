@@ -222,17 +222,6 @@ def main():
     checkpoint_dir = './checkpoints'
     os.makedirs(checkpoint_dir, exist_ok=True)
     
-    wandb.init(
-        project="your_project_name",
-        name="experiment_name",
-        config={
-            "learning_rate": 2e-4,
-            "batch_size": GLOBAL_BATCH_SIZE,
-            "train_steps": TRAIN_STEPS,
-            "warmup_steps": WARMUP_STEPS,
-            "epochs": 1,
-        },
-    )
     
     checkpoint_callback = tf_keras.callbacks.ModelCheckpoint(
         filepath=os.path.join(checkpoint_dir, 'model.step-{batch:06d}.keras'),
@@ -241,12 +230,11 @@ def main():
         save_freq=766000
     )
     
-    wandb_callback = WandbMetricsLogger(log_freq="batch")
     model.fit(
         tf_dataset,
         epochs=1,
         steps_per_epoch=TRAIN_STEPS,
-        callbacks=[checkpoint_callback, wandb_callback]
+        callbacks=[checkpoint_callback]
     )
 
 if __name__ == "__main__":
