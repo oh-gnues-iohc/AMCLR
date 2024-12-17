@@ -69,7 +69,7 @@ def main():
     set_seed(training_args.seed)
 
     # Load dataset
-    datasets = load_from_disk(data_args.dataset_name)["train"]
+    datasets = load_from_disk(data_args.dataset_name)["train"].shuffle(8324)
 
     # Load tokenizer and model configurations
     disc_config_path = f"google/electra-{model_args.model_size}-discriminator"
