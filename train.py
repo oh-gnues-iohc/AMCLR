@@ -1,241 +1,118 @@
-import tensorflow as tf, tf_keras
-from transformers.optimization_tf import create_optimizer
-from src.amclr.model_tf import AMCLR_TF, AMCLRConfig, ELECTRA
-from transformers import AutoTokenizer
+import logging
 import os
-import math
-import wandb
-
 import sys
-from typing import Any, Dict, Optional, Union
+import pyarrow as pa
+import pyarrow.dataset as ds
+import pyarrow.fs as pafs
+from datasets import Dataset
+from dataclasses import dataclass, field
+from typing import Optional
+
+import torch_xla
+import torch_xla.runtime as xr
 
 
-import wandb
-from wandb.integration.keras.keras import patch_tf_keras
-from wandb.sdk.lib import telemetry
-if sys.version_info >= (3, 8):
-    from typing import Literal
-else:
-    from typing_extensions import Literal
+from datasets import load_dataset, load_from_disk
+from transformers import (
+    AutoTokenizer,
+    Trainer,
+    TrainingArguments,
+    HfArgumentParser,
+    set_seed,
+)
+from transformers.models.electra import ElectraConfig
+
+logger = logging.getLogger(__name__)
+
+MODEL_SIZES = ["small", "base", "large"]
+MODEL_TYPES = ["AMCLR", "ELECTRA", "AMOS"]
 
 
-LogStrategy = Literal["epoch", "batch"]
+@dataclass
+class ModelArguments:
+    model_size: Optional[str] = field(
+        default=None,
+        metadata={"help": f"Choose from: {', '.join(MODEL_SIZES)}"},
+    )
+    model_type: Optional[str] = field(
+        default=None,
+        metadata={"help": f"Choose from: {', '.join(MODEL_TYPES)}"},
+    )
 
 
-patch_tf_keras()
+@dataclass
+class DataTrainingArguments:
+    dataset_name: Optional[str] = field(
+        default=None,
+        metadata={"help": "The name of the dataset to use (via the datasets library)."},
+    )
 
 
-class WandbMetricsLogger(tf_keras.callbacks.Callback):
-    """Logger that sends system metrics to W&B.
-
-    `WandbMetricsLogger` automatically logs the `logs` dictionary that callback methods
-    take as argument to wandb.
-
-    This callback automatically logs the following to a W&B run page:
-    * system (CPU/GPU/TPU) metrics,
-    * train and validation metrics defined in `model.compile`,
-    * learning rate (both for a fixed value or a learning rate scheduler)
-
-    Notes:
-    If you resume training by passing `initial_epoch` to `model.fit` and you are using a
-    learning rate scheduler, make sure to pass `initial_global_step` to
-    `WandbMetricsLogger`. The `initial_global_step` is `step_size * initial_step`, where
-    `step_size` is number of training steps per epoch. `step_size` can be calculated as
-    the product of the cardinality of the training dataset and the batch size.
-
-    Arguments:
-        log_freq: ("epoch", "batch", or int) if "epoch", logs metrics
-            at the end of each epoch. If "batch", logs metrics at the end
-            of each batch. If an integer, logs metrics at the end of that
-            many batches. Defaults to "epoch".
-        initial_global_step: (int) Use this argument to correctly log the
-            learning rate when you resume training from some `initial_epoch`,
-            and a learning rate scheduler is used. This can be computed as
-            `step_size * initial_step`. Defaults to 0.
-    """
-
-    def __init__(
-        self,
-        log_freq: Union[LogStrategy, int] = "epoch",
-        initial_global_step: int = 0,
-        *args: Any,
-        **kwargs: Any,
-    ) -> None:
-        super().__init__(*args, **kwargs)
-
-        if wandb.run is None:
-            raise wandb.Error(
-                "You must call `wandb.init()` before WandbMetricsLogger()"
-            )
-
-        with telemetry.context(run=wandb.run) as tel:
-            tel.feature.keras_metrics_logger = True
-
-        if log_freq == "batch":
-            log_freq = 5000
-
-        self.logging_batch_wise = isinstance(log_freq, int)
-        self.log_freq: Any = log_freq if self.logging_batch_wise else None
-        self.global_batch = 0
-        self.global_step = initial_global_step
-
-        if self.logging_batch_wise:
-            # define custom x-axis for batch logging.
-            wandb.define_metric("batch/batch_step")
-            # set all batch metrics to be logged against batch_step.
-            wandb.define_metric("batch/*", step_metric="batch/batch_step")
-        else:
-            # define custom x-axis for epoch-wise logging.
-            wandb.define_metric("epoch/epoch")
-            # set all epoch-wise metrics to be logged against epoch.
-            wandb.define_metric("epoch/*", step_metric="epoch/epoch")
-
-    def _get_lr(self) -> Union[float, None]:
-        if isinstance(self.model.optimizer.learning_rate, tf.Variable):
-            return float(self.model.optimizer.learning_rate.numpy().item())
-        try:
-            return float(
-                self.model.optimizer.learning_rate(step=self.global_step).numpy().item()
-            )
-        except Exception:
-            wandb.termerror("Unable to log learning rate.", repeat=False)
-            return None
-
-    def on_epoch_end(self, epoch: int, logs: Optional[Dict[str, Any]] = None) -> None:
-        """Called at the end of an epoch."""
-        logs = dict() if logs is None else {f"epoch/{k}": v for k, v in logs.items()}
-
-        logs["epoch/epoch"] = epoch
-
-        lr = self._get_lr()
-        if lr is not None:
-            logs["epoch/learning_rate"] = lr
-
-        wandb.log(logs)
-
-    def on_batch_end(self, batch: int, logs: Optional[Dict[str, Any]] = None) -> None:
-        self.global_step += 1
-        """An alias for `on_train_batch_end` for backwards compatibility."""
-        if self.logging_batch_wise and batch % self.log_freq == 0:
-            logs = {f"batch/{k}": v for k, v in logs.items()} if logs else {}
-            logs["batch/batch_step"] = self.global_batch
-
-            lr = self._get_lr()
-            if lr is not None:
-                logs["batch/learning_rate"] = lr
-
-            wandb.log(logs)
-
-            self.global_batch += self.log_freq
-
-    def on_train_batch_end(
-        self, batch: int, logs: Optional[Dict[str, Any]] = None
-    ) -> None:
-        """Called at the end of a training batch in `fit` methods."""
-        self.on_batch_end(batch, logs if logs else {})
-
-
-
-class WarmUpLinearDecay(tf.keras.optimizers.schedules.LearningRateSchedule):
-    def __init__(self, initial_learning_rate, warmup_steps, total_steps):
-        super(WarmUpLinearDecay, self).__init__()
-        self.initial_learning_rate = initial_learning_rate
-        self.warmup_steps = warmup_steps
-        self.total_steps = total_steps
-
-    def __call__(self, step):
-        step = tf.cast(step, tf.float32)
-        warmup_steps = tf.cast(self.warmup_steps, tf.float32)
-        total_steps = tf.cast(self.total_steps, tf.float32)
-        learning_rate = tf.cond(
-            step < warmup_steps,
-            lambda: self.initial_learning_rate * (step / warmup_steps),
-            lambda: self.initial_learning_rate * (1 - (step - warmup_steps) / (total_steps - warmup_steps))
-        )
-        return learning_rate
-
-    def get_config(self):
-        return {
-            "initial_learning_rate": self.initial_learning_rate,
-            "warmup_steps": self.warmup_steps,
-            "total_steps": self.total_steps
-        }
-        
+# xr.use_spmd()
 def main():
-    resolver = tf.distribute.cluster_resolver.TPUClusterResolver("node-1")
-    tf.config.experimental_connect_to_cluster(resolver)
-    tf.tpu.experimental.initialize_tpu_system(resolver)
-    strategy = tf.distribute.TPUStrategy(resolver)
-    print('Number of devices: {}'.format(strategy.num_replicas_in_sync))
-    
-    # 데이터셋 생성
-    
-    GLOBAL_BATCH_SIZE = 256  # 총 배치 사이즈 (각 GPU당 64 배치)
-    
-    TRAIN_STEPS = 766_000  # Base 모델의 Train Steps (ELECTRA 기준)
-    WARMUP_STEPS = 10000
-    
-    def decode_fn(sample):
-        features = {
-            "input_ids": tf.io.FixedLenFeature((512,), dtype=tf.int64),
-            "attention_mask": tf.io.FixedLenFeature((512,), dtype=tf.int64),
-            "token_type_ids": tf.io.FixedLenFeature((512,), dtype=tf.int64),
-        }
-        parsed_features = tf.io.parse_single_example(sample, features)
-        return parsed_features
-    
-    tf_dataset = tf.data.TFRecordDataset(["gs://tempbb/dataset.tfrecords"])
-    tf_dataset = tf_dataset.map(decode_fn)
-    tf_dataset = tf_dataset.shuffle(10_000_000).batch(GLOBAL_BATCH_SIZE, drop_remainder=True)
-    tf_dataset = tf_dataset.repeat()  # 무한 반복
-    
-    tf_dataset = tf_dataset.prefetch(buffer_size=tf.data.experimental.AUTOTUNE)  # Prefetch 추가
+    # Parse arguments
+    parser = HfArgumentParser((ModelArguments, DataTrainingArguments, TrainingArguments))
+    model_args, data_args, training_args = parser.parse_args_into_dataclasses()
 
-    options = tf.data.Options()
-    options.experimental_distribute.auto_shard_policy = tf.data.experimental.AutoShardPolicy.DATA
+    # Setup logging
+    logging.basicConfig(
+        format="%(asctime)s - %(levelname)s - %(name)s - %(message)s",
+        datefmt="%m/%d/%Y %H:%M:%S",
+        handlers=[logging.StreamHandler(sys.stdout)],
+    )
+    logger.setLevel(logging.INFO)
 
-    # 옵션을 데이터셋에 적용
-    tf_dataset = tf_dataset.with_options(options)
-    
-    with strategy.scope():
-        # 모델 설정
-        config = AMCLRConfig.from_pretrained("google/electra-base-discriminator")
-        tokenizer = AutoTokenizer.from_pretrained("google/electra-base-discriminator")
-        special_token_ids = tokenizer.all_special_ids
-        
-        # 모델 인스턴스 생성
-        model = ELECTRA(config, special_token_ids)
-        
-        
-        optimizer, lr_schedule = create_optimizer(
-            init_lr=2e-4,
-            num_train_steps=TRAIN_STEPS,
-            num_warmup_steps=WARMUP_STEPS,
-            adam_epsilon=1e-6,
-            weight_decay_rate=0.01
-        )
-        
-        # 모델 컴파일
-        model.compile(optimizer=optimizer)
-        
-    
-    checkpoint_dir = './checkpoints'
-    os.makedirs(checkpoint_dir, exist_ok=True)
-    
-    
-    checkpoint_callback = tf_keras.callbacks.ModelCheckpoint(
-        filepath=os.path.join(checkpoint_dir, 'model.step-{batch:06d}.keras'),
-        monitor='loss',
-        mode='min',
-        save_freq=766000
+    # Log training parameters
+    logger.info(f"Training/evaluation parameters {training_args}")
+
+    # Set random seed
+    set_seed(training_args.seed)
+
+    # Load dataset
+    datasets = load_from_disk(data_args.dataset_name)["train"]
+
+    # Load tokenizer and model configurations
+    disc_config_path = f"google/electra-{model_args.model_size}-discriminator"
+    gen_config_path = f"google/electra-{model_args.model_size}-generator"
+
+    if model_args.model_type == "AMCLR":
+        from src.amclr.model import AMCLR, AMCLRMLM
+        disc_model = AMCLR
+        gen_model = AMCLRMLM
+    else:
+        if model_args.model_type == "AMOS":
+            from src.amclr.model_amos import SimsElectra, SimsMLM
+        else:
+            from src.amclr.model_electra import SimsElectra, SimsMLM
+        disc_model = SimsElectra
+        gen_model = SimsMLM
+
+    tokenizer = AutoTokenizer.from_pretrained(disc_config_path)
+
+    # Initialize models
+    gen = gen_model(ElectraConfig.from_pretrained(gen_config_path), tokenizer.all_special_ids)
+    disc = disc_model(ElectraConfig.from_pretrained(disc_config_path), tokenizer.all_special_ids, gen)
+
+    # Log model parameters
+    n_params = sum(p.numel() for p in disc.parameters())
+    logger.info(f"Training new model from scratch - Total size={n_params / 2**20:.2f}M params")
+
+    # Initialize Trainer
+    trainer = Trainer(
+        model=disc,
+        args=training_args,
+        train_dataset=datasets
     )
-    
-    model.fit(
-        tf_dataset,
-        epochs=1,
-        steps_per_epoch=TRAIN_STEPS,
-        callbacks=[checkpoint_callback]
-    )
+
+    # Train the model
+    trainer.train()
+
+def _mp_fn(index):
+    # For xla_spawn (TPUs)
+    xr.initialize_cache(f'/tmp/xla_cache_{index}', readonly=False)
+    main()
+
 
 if __name__ == "__main__":
-    main()
+    torch_xla.launch(_mp_fn)
+    # main()

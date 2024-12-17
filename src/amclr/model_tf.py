@@ -154,7 +154,7 @@ class AMCLR_TF(TFElectraForPreTraining):
     def __init__(self, config, special_token_ids, **kwargs):
         super().__init__(config, **kwargs)
         self.special_token_ids = special_token_ids
-        self.min_value = tf.float32.min
+        self.min_value = -1e9
 
         self.electra = TFElectraMainLayer(config, name="electra")
         self.discriminator_predictions = TFElectraDiscriminatorPredictions(config, name="discriminator_predictions")
@@ -379,7 +379,7 @@ class ELECTRA(TFElectraForPreTraining):
     def __init__(self, config, special_token_ids, **kwargs):
         super().__init__(config, **kwargs)
         self.special_token_ids = special_token_ids
-        self.min_value = tf.float32.min
+        self.min_value = -1e9
 
         self.electra = TFElectraMainLayer(config, name="electra")
         self.discriminator_predictions = TFElectraDiscriminatorPredictions(config, name="discriminator_predictions")
@@ -492,7 +492,6 @@ class ELECTRA(TFElectraForPreTraining):
             return_dict=return_dict,
             training=training,
         )
-        special_token_ids_tensor = tf.constant(self.special_token_ids, dtype=tf.int32)
         
         generator_sequence_output = generator_hidden_states[0]
         prediction_scores = self.generator_predictions(generator_sequence_output, training=training)

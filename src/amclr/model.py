@@ -181,6 +181,7 @@ class AMCLRMLM(ElectraForMaskedLM):
         self.temperature = 0.3
         self.generator_score_head = nn.Linear(config.embedding_size, 1)
         self.num_maskings = max(int(512 * masking_ratio), 1)
+        self.min_val = torch.finfo(self.dtype).min
         
         self.post_init()
 
@@ -198,6 +199,11 @@ class AMCLRMLM(ElectraForMaskedLM):
         return_dict: Optional[bool] = None,
     ):
         return_dict = return_dict if return_dict is not None else self.config.use_return_dict
+        
+        special_token_ids_tensor = torch.tensor(
+            self.special_token_ids, dtype=torch.long, device=input_ids.device
+        )
+        
 
         generator_hidden_states = self.electra(
             input_ids,
@@ -215,50 +221,107 @@ class AMCLRMLM(ElectraForMaskedLM):
 
         prediction_scores = self.generator_predictions(generator_sequence_output)
         similarity = self.generator_lm_head(prediction_scores) # batch_size, seq_len, vocab_size
-        scores = self.generator_score_head(prediction_scores).squeeze(-1) # [batch_size, seq_len]
+        masking_scores = self.generator_score_head(prediction_scores)
                 
-        mask = torch.zeros_like(similarity)
+        mask_special_tokens = torch.zeros(
+            self.config.vocab_size, dtype=torch.bool, device=input_ids.device
+        )
+        mask_special_tokens[special_token_ids_tensor] = True
+        mask_special_tokens_expanded = mask_special_tokens.view(1, 1, -1)  # Shape: [1, 1, vocab_size]
         
-        batch_indices = torch.arange(similarity.size(0)).unsqueeze(1)
-        seq_indices = torch.arange(similarity.size(1)).unsqueeze(0)
-        mask[batch_indices, seq_indices, input_ids] = torch.finfo(self.dtype).min
-        mask[:, :, :100] = torch.finfo(self.dtype).min
-        mask[:, :, 104:999] = torch.finfo(self.dtype).min
-        masked_similarities = similarity + mask #[batch_size, seq_len, vocab_size]
+        mask_input_ids = F.one_hot(input_ids, num_classes=self.config.vocab_size).bool()  # Shape: [batch, seq_len, vocab_size]
         
-        batch_size, seq_len, hidden_dim = generator_sequence_output.shape
+        # Combine masks
+        total_mask = mask_special_tokens_expanded | mask_input_ids  # Broadcasting to [batch, seq_len, vocab_size]
+        
+        # Apply the combined mask to prediction_scores
+        similarity = torch.where(total_mask, self.min_value, similarity)
+        
+        # Apply Gumbel Softmax
+        prediction_scores_hard = F.gumbel_softmax(similarity, tau=0.3, hard=True)
+        
+        # Compute masking scores
+        
+        special_tokens_mask = (input_ids.unsqueeze(-1) == special_token_ids_tensor).any(dim=-1)  # Shape: [batch, seq_len]
+        
+        # Apply the special tokens mask to masking_scores
+        masking_scores = torch.where(
+            special_tokens_mask.unsqueeze(-1),
+            torch.tensor(self.min_value, dtype=masking_scores.dtype, device=masking_scores.device),
+            masking_scores
+        )  # Shape: [batch, seq_len, 1]
+        
+        # Define the number of tokens to mask
+        num_maskings = 77
+        
+        # Squeeze the last dimension for topk operation
+        masking_scores_squeezed = masking_scores.squeeze(-1)  # Shape: [batch, seq_len]
+        
+        # Select top-k masking scores
+        _, topk_indices = torch.topk(masking_scores_squeezed, k=num_maskings, dim=1)  # Shape: [batch, num_maskings]
+        
+        # Apply Gumbel Softmax to masking_scores
+        masking_scores_soft = F.gumbel_softmax(masking_scores, tau=1.0, hard=False, dim=1)  # Shape: [batch, seq_len, 1]
+        
+        # Create hard masking scores based on topk_indices
+        one_hot_topk = F.one_hot(topk_indices, num_classes=masking_scores.size(1)).type_as(masking_scores)  # Shape: [batch, num_maskings, seq_len]
+        masking_scores_hard = one_hot_topk.sum(dim=1)  # Shape: [batch, seq_len]
+        
+        # Detach the gradient for the hard masking scores and add the soft scores
+        masking_scores_hard = (masking_scores_hard - masking_scores_soft.squeeze(-1)).detach() + masking_scores_soft.squeeze(-1)  # Shape: [batch, seq_len]
+        
+        # Convert to float for discriminator labels
+        disc_labels = masking_scores_hard.float()  # Shape: [batch, seq_len]
+        
+        # Expand dimensions to match prediction_scores_hard
+        masking_scores_hard = masking_scores_hard.unsqueeze(-1)  # Shape: [batch, seq_len, 1]
+        
+        # Compute the final probabilities
+        probs = masking_scores_hard * prediction_scores_hard  # Shape: [batch, seq_len, vocab_size]
+        
+        
+        # mask = torch.zeros_like(similarity)
+        
+        # batch_indices = torch.arange(similarity.size(0)).unsqueeze(1)
+        # seq_indices = torch.arange(similarity.size(1)).unsqueeze(0)
+        # mask[batch_indices, seq_indices, input_ids] = torch.finfo(self.dtype).min
+        # mask[:, :, :100] = torch.finfo(self.dtype).min
+        # mask[:, :, 104:999] = torch.finfo(self.dtype).min
+        # masked_similarities = similarity + mask #[batch_size, seq_len, vocab_size]
+        
+        # batch_size, seq_len, hidden_dim = generator_sequence_output.shape
 
-        # Create special token mask
-        special_tokens = torch.tensor(self.special_token_ids, device=self.device)
-        is_special = (input_ids.unsqueeze(-1) == special_tokens).any(dim=-1)  # [batch_size, seq_len]
-        non_special_mask = (~is_special).float()
+        # # Create special token mask
+        # special_tokens = torch.tensor(self.special_token_ids, device=self.device)
+        # is_special = (input_ids.unsqueeze(-1) == special_tokens).any(dim=-1)  # [batch_size, seq_len]
+        # non_special_mask = (~is_special).float()
 
-        # Calculate number of tokens to swap
+        # # Calculate number of tokens to swap
         
-        score_mask = torch.zeros_like(scores)
+        # score_mask = torch.zeros_like(scores)
         
-        valid_tokens = attention_mask * non_special_mask  # [batch_size, seq_len]
-        invalid_tokens = ~(valid_tokens).bool() # [batch_size, seq_len]
-        score_mask = torch.where(invalid_tokens, torch.tensor(torch.finfo(self.dtype).min, device=score_mask.device), score_mask)
-        # score_mask[invalid_tokens] = torch.finfo(self.dtype).min
+        # valid_tokens = attention_mask * non_special_mask  # [batch_size, seq_len]
+        # invalid_tokens = ~(valid_tokens).bool() # [batch_size, seq_len]
+        # score_mask = torch.where(invalid_tokens, torch.tensor(torch.finfo(self.dtype).min, device=score_mask.device), score_mask)
+        # # score_mask[invalid_tokens] = torch.finfo(self.dtype).min
         
-        masked_scores = scores + score_mask # [batch_size, seq_len]
+        # masked_scores = scores + score_mask # [batch_size, seq_len]
         
-        y_soft = F.gumbel_softmax(masked_scores, hard=False, dim=-1) # [batch_size, seq_len]
-        _, topk_indices = y_soft.topk(self.num_maskings, dim=1)
+        # y_soft = F.gumbel_softmax(masked_scores, hard=False, dim=-1) # [batch_size, seq_len]
+        # _, topk_indices = y_soft.topk(self.num_maskings, dim=1)
         
-        topk_hard = torch.zeros_like(masked_scores).scatter_(-1, topk_indices, 1.0)
+        # topk_hard = torch.zeros_like(masked_scores).scatter_(-1, topk_indices, 1.0)
 
-        top_k_socres = topk_hard - y_soft.detach() + y_soft
+        # top_k_socres = topk_hard - y_soft.detach() + y_soft
         
         
-        token_probs = F.gumbel_softmax(masked_similarities, tau=self.temperature, hard=True, dim=-1) # [batch_size, seq_len, vocab_size]
+        # token_probs = F.gumbel_softmax(masked_similarities, tau=self.temperature, hard=True, dim=-1) # [batch_size, seq_len, vocab_size]
         
         
-        probs = token_probs * top_k_socres.unsqueeze(-1)
-        labels = top_k_socres.detach().bool().long()
+        # probs = token_probs * top_k_socres.unsqueeze(-1)
+        # labels = top_k_socres.detach().bool().long()
         
-        return probs, generator_sequence_output, labels
+        return probs, generator_sequence_output, disc_labels
 
 class GradMultiply(Function):
     """Gradient backpropagation multiplication."""
@@ -400,16 +463,10 @@ class AMCLR(ElectraForPreTraining):
         loss = None
         if labels is not None:
             loss_fct = nn.BCEWithLogitsLoss(reduction='none')
-            disc_label = torch.where(
-                mask_indices,
-                torch.full_like(mask_indices, 1.0, dtype=torch.float, device=mask_indices.device),
-                torch.full_like(mask_indices, 0.0, dtype=torch.float, device=mask_indices.device),
-            )
-            disc_loss = loss_fct(logits.view(-1, discriminator_sequence_output.shape[1]), disc_label.float())
+            disc_loss = loss_fct(logits.view(-1, discriminator_sequence_output.shape[1]), labels)
             
             masked_loss = disc_loss * attention_mask
             disc_loss = masked_loss.sum() / attention_mask.sum() * self.l1
-            
                                     
             scores = torch.matmul(global_disc_cls_hidden_state, torch.transpose(global_gen_cls_hidden_state, 0, 1))
 
