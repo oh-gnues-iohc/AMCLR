@@ -279,48 +279,6 @@ class AMCLRMLM(ElectraForMaskedLM):
         # Compute the final probabilities
         probs = masking_scores_hard * prediction_scores_hard  # Shape: [batch, seq_len, vocab_size]
         
-        
-        # mask = torch.zeros_like(similarity)
-        
-        # batch_indices = torch.arange(similarity.size(0)).unsqueeze(1)
-        # seq_indices = torch.arange(similarity.size(1)).unsqueeze(0)
-        # mask[batch_indices, seq_indices, input_ids] = torch.finfo(self.dtype).min
-        # mask[:, :, :100] = torch.finfo(self.dtype).min
-        # mask[:, :, 104:999] = torch.finfo(self.dtype).min
-        # masked_similarities = similarity + mask #[batch_size, seq_len, vocab_size]
-        
-        # batch_size, seq_len, hidden_dim = generator_sequence_output.shape
-
-        # # Create special token mask
-        # special_tokens = torch.tensor(self.special_token_ids, device=self.device)
-        # is_special = (input_ids.unsqueeze(-1) == special_tokens).any(dim=-1)  # [batch_size, seq_len]
-        # non_special_mask = (~is_special).float()
-
-        # # Calculate number of tokens to swap
-        
-        # score_mask = torch.zeros_like(scores)
-        
-        # valid_tokens = attention_mask * non_special_mask  # [batch_size, seq_len]
-        # invalid_tokens = ~(valid_tokens).bool() # [batch_size, seq_len]
-        # score_mask = torch.where(invalid_tokens, torch.tensor(torch.finfo(self.dtype).min, device=score_mask.device), score_mask)
-        # # score_mask[invalid_tokens] = torch.finfo(self.dtype).min
-        
-        # masked_scores = scores + score_mask # [batch_size, seq_len]
-        
-        # y_soft = F.gumbel_softmax(masked_scores, hard=False, dim=-1) # [batch_size, seq_len]
-        # _, topk_indices = y_soft.topk(self.num_maskings, dim=1)
-        
-        # topk_hard = torch.zeros_like(masked_scores).scatter_(-1, topk_indices, 1.0)
-
-        # top_k_socres = topk_hard - y_soft.detach() + y_soft
-        
-        
-        # token_probs = F.gumbel_softmax(masked_similarities, tau=self.temperature, hard=True, dim=-1) # [batch_size, seq_len, vocab_size]
-        
-        
-        # probs = token_probs * top_k_socres.unsqueeze(-1)
-        # labels = top_k_socres.detach().bool().long()
-        
         return probs, generator_sequence_output, disc_labels
 
 class GradMultiply(Function):
@@ -432,20 +390,31 @@ class AMCLR(ElectraForPreTraining):
             global_disc_cls_hidden_state = []
             global_gen_cls_hidden_state = []
             
-            all_q_vectors = all_gather(disc_cls_hidden_state.detach())
-            all_c_vectors = all_gather(gen_cls_hidden_state.detach())
+            all_q_vectors = all_gather(disc_cls_hidden_state.detach(), return_tensor=True) # word_size, batch_size, dim
+            all_c_vectors = all_gather(gen_cls_hidden_state.detach(), return_tensor=True) # word_size, batch_size, dim
+            
+            all_q_vectors = all_q_vectors.to(disc_cls_hidden_state.device)
+            all_c_vectors = all_c_vectors.to(gen_cls_hidden_state.device)
 
-            for i, item in enumerate(zip(all_q_vectors, all_c_vectors)):
-                q_vector, ctx_vectors = item
-                if i != local_rank:
-                    global_disc_cls_hidden_state.append(q_vector.to(disc_cls_hidden_state.device))
-                    global_gen_cls_hidden_state.append(ctx_vectors.to(disc_cls_hidden_state.device))
-                else:
-                    global_disc_cls_hidden_state.append(disc_cls_hidden_state)
-                    global_gen_cls_hidden_state.append(gen_cls_hidden_state)
-                
-            global_disc_cls_hidden_state = torch.cat(global_disc_cls_hidden_state, dim=0)
-            global_gen_cls_hidden_state = torch.cat(global_gen_cls_hidden_state, dim=0)
+            # Create a tensor index for the local rank
+            local_rank_tensor = torch.tensor(local_rank, device=all_q_vectors.device).unsqueeze(0).unsqueeze(-1).unsqueeze(-1).unsqueeze(-1)
+            temp_mask = torch.arange(all_q_vectors.size(0), device=all_q_vectors.device).view(-1, 1, 1, 1) == local_rank_tensor
+            # Replace the local_rank slice with the original tensors
+            all_q_vectors = torch.where(
+                temp_mask,
+                disc_cls_hidden_state.unsqueeze(0),
+                all_q_vectors
+            )
+
+            all_c_vectors = torch.where(
+                temp_mask,
+                gen_cls_hidden_state.unsqueeze(0),
+                all_c_vectors
+            )
+
+            # Concatenate along the first dimension (world_size)
+            global_disc_cls_hidden_state = all_q_vectors.view(-1, disc_cls_hidden_state.size(-1))  # Shape: [world_size * word_size * batch_size, dim]
+            global_gen_cls_hidden_state = all_c_vectors.view(-1, gen_cls_hidden_state.size(-1))    # Shape: [world_size * word_size * batch_size, dim]
             
         else:
             global_disc_cls_hidden_state = disc_cls_hidden_state
