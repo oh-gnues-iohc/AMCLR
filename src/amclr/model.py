@@ -271,7 +271,7 @@ class AMCLRMLM(ElectraForMaskedLM):
         masking_scores_hard = (masking_scores_hard - masking_scores_soft.squeeze(-1)).detach() + masking_scores_soft.squeeze(-1)  # Shape: [batch, seq_len]
         
         # Convert to float for discriminator labels
-        disc_labels = masking_scores_hard.float()  # Shape: [batch, seq_len]
+        disc_labels = masking_scores_hard.detach().float()  # Shape: [batch, seq_len]
         
         # Expand dimensions to match prediction_scores_hard
         masking_scores_hard = masking_scores_hard.unsqueeze(-1)  # Shape: [batch, seq_len, 1]
