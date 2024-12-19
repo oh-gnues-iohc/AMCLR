@@ -168,7 +168,7 @@ def main(rank):
             lr_scheduler.step()
             
             global_step = epoch * num_update_steps_per_epoch + step
-            progress_bar.update(global_step)
+            progress_bar.update(1)
             
             if global_step > 0 and global_step % training_args.save_steps == 0:
                 if rank==0:
@@ -200,7 +200,7 @@ def main(rank):
 
 def _mp_fn(index):
     # For xla_spawn (TPUs)
-    xr.initialize_cache(f'/tmp/xla_cache_{index}', readonly=False)
+    # xr.initialize_cache(f'/tmp/xla_cache_{index}', readonly=False)
     main(index)
 
 
