@@ -86,7 +86,7 @@ def main(rank):
 
     # Set random seed
     set_seed(training_args.seed)
-    xm.set_rng_seed(training_args.seed)
+    # xm.set_rng_seed(training_args.seed)
     # Load dataset
     datasets = load_from_disk(data_args.dataset_name)["train"].shuffle(8324)
 
