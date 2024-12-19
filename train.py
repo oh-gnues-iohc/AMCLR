@@ -77,7 +77,7 @@ def main(rank):
     dist.init_process_group('xla', init_method='xla://')
     logger.info(f"Running basic DDP example on rank {rank}.")
 
-    if xr.is_master_ordinal():
+    if xm.is_master_ordinal():
         wandb.init(project="my_project", name="my_run")
     # Log training parameters
     # logger.info(f"Training/evaluation parameters {training_args}")
@@ -164,7 +164,7 @@ def main(rank):
             global_step = epoch * num_update_steps_per_epoch + step
             
             if global_step > 0 and global_step % training_args.save_steps == 0:
-                if xr.is_master_ordinal():
+                if xm.is_master_ordinal():
                     save_path = os.path.join(training_args.output_dir, f"disc-checkpoint-{global_step}")
                     xm.master_print(f"Saving model checkpoint to {save_path}")
                     model.electra.save_pretrained(save_path)
@@ -175,7 +175,7 @@ def main(rank):
 
             # 특정 스텝마다 wandb에 로깅
             if global_step > 0 and global_step % training_args.logging_steps == 0:
-                if xr.is_master_ordinal():
+                if xm.is_master_ordinal():
                     current_lr = optimizer.param_groups[0]["lr"]
                     wandb.log({"loss": loss.item(), "lr": current_lr}, step=global_step)
             
