@@ -28,6 +28,14 @@ logger = logging.getLogger(__name__)
 MODEL_SIZES = ["small", "base", "large"]
 MODEL_TYPES = ["AMCLR", "ELECTRA", "AMOS"]
 
+def setup(rank, world_size):
+    os.environ['PJRT_DEVICE'] = 'TPU'
+
+    # initialize the xla process group
+    dist.init_process_group("xla", rank=rank, world_size=world_size)
+
+def cleanup():
+    dist.destroy_process_group()
 
 @dataclass
 class ModelArguments:
@@ -50,7 +58,9 @@ class DataTrainingArguments:
 
 
 # xr.use_spmd()
-def main():
+def main(rank):
+    
+    
     # Parse arguments
     parser = HfArgumentParser((ModelArguments, DataTrainingArguments, TrainingArguments))
     model_args, data_args, training_args = parser.parse_args_into_dataclasses()
@@ -62,9 +72,16 @@ def main():
         handlers=[logging.StreamHandler(sys.stdout)],
     )
     logger.setLevel(logging.INFO)
+    
+    new_rank = xr.global_ordinal()
+    assert new_rank == rank
+    world_size = xr.world_size()
+
+    logger.info(f"Running basic DDP example on rank {rank}.")
+    setup(rank, world_size)
 
     # Log training parameters
-    logger.info(f"Training/evaluation parameters {training_args}")
+    # logger.info(f"Training/evaluation parameters {training_args}")
 
     # Set random seed
     set_seed(training_args.seed)
@@ -95,8 +112,8 @@ def main():
     disc = disc_model(ElectraConfig.from_pretrained(disc_config_path), tokenizer.all_special_ids, gen)
 
     # Log model parameters
-    n_params = sum(p.numel() for p in disc.parameters())
-    logger.info(f"Training new model from scratch - Total size={n_params / 2**20:.2f}M params")
+    # n_params = sum(p.numel() for p in disc.parameters())
+    # logger.info(f"Training new model from scratch - Total size={n_params / 2**20:.2f}M params")
 
     # Initialize Trainer
     trainer = Trainer(
@@ -111,8 +128,7 @@ def main():
 def _mp_fn(index):
     # For xla_spawn (TPUs)
     xr.initialize_cache(f'/tmp/xla_cache_{index}', readonly=False)
-    dist.init_process_group('xla', init_method='xla://')
-    main()
+    main(index)
 
 
 if __name__ == "__main__":

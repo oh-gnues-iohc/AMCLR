@@ -303,7 +303,6 @@ class AMCLR(ElectraForPreTraining):
                 all_c_vectors
             )
 
-            # Concatenate along the first dimension (world_size)
             global_disc_cls_hidden_state = all_q_vectors.view(-1, disc_cls_hidden_state.size(-1))  # Shape: [world_size * word_size * batch_size, dim]
             global_gen_cls_hidden_state = all_c_vectors.view(-1, gen_cls_hidden_state.size(-1))    # Shape: [world_size * word_size * batch_size, dim]
             
@@ -311,9 +310,7 @@ class AMCLR(ElectraForPreTraining):
             global_disc_cls_hidden_state = disc_cls_hidden_state
             global_gen_cls_hidden_state = gen_cls_hidden_state
             
-            
-        # logger.info(global_gen_cls_hidden_state.shape, logits.shape, local_rank, distributed_world_size)
-        # print(global_gen_cls_hidden_state.shape, logits.shape, local_rank, distributed_world_size)
+        
             
         positive_idx_per_question = torch.arange(
         global_disc_cls_hidden_state.size(0), device=disc_cls_hidden_state.device
@@ -341,45 +338,3 @@ class AMCLR(ElectraForPreTraining):
         loss = disc_loss + sims_loss
         output = (None,)
         return ((loss,) + output) if loss is not None else output
-        # return loss
-    # def save_pretrained(
-    #     self,
-    #     save_directory: Union[str, os.PathLike],
-    #     is_main_process: bool = True,
-    #     state_dict: Optional[dict] = None,
-    #     save_function: Callable = torch.save,
-    #     push_to_hub: bool = False,
-    #     max_shard_size: Union[int, str] = "5GB",
-    #     safe_serialization: bool = True,
-    #     variant: Optional[str] = None,
-    #     token: Optional[Union[str, bool]] = None,
-    #     save_peft_format: bool = True,
-    #     **kwargs,
-    # ):
-    #     import os
-    #     unwrap_model(self.electra).save_pretrained(
-    #         save_directory,
-    #         is_main_process=is_main_process,
-    #         state_dict=state_dict,
-    #         save_function=save_function,
-    #         push_to_hub=push_to_hub,
-    #         max_shard_size=max_shard_size,
-    #         safe_serialization=safe_serialization,
-    #         variant=variant,
-    #         token=token,
-    #         save_peft_format=save_peft_format,
-    #         **kwargs,  # 추가 인자 전달
-    #     )
-    #     unwrap_model(self.generator).save_pretrained(
-    #         os.path.join(save_directory, "generator"),
-    #         is_main_process=is_main_process,
-    #         state_dict=state_dict,
-    #         save_function=save_function,
-    #         push_to_hub=push_to_hub,
-    #         max_shard_size=max_shard_size,
-    #         safe_serialization=safe_serialization,
-    #         variant=variant,
-    #         token=token,
-    #         save_peft_format=save_peft_format,
-    #         **kwargs,  # 추가 인자 전달
-    #     )
