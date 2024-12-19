@@ -337,4 +337,5 @@ class AMCLR(ElectraForPreTraining):
             
         loss = disc_loss + sims_loss
         output = (None,)
-        return ((loss,) + output) if loss is not None else output
+        return loss
+        # return ((loss,) + output) if loss is not None else output

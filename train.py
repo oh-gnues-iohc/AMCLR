@@ -160,7 +160,7 @@ def main(rank):
         for step, batch in enumerate(train_device_loader):
             optimizer.zero_grad()
             outputs = model(**batch)
-            loss = outputs.loss
+            loss = outputs
             loss.backward()
             xm.optimizer_step(optimizer)
             lr_scheduler.step()
