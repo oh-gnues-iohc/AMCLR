@@ -155,6 +155,8 @@ def main(rank):
     num_train_epochs = math.ceil(training_args.max_steps / num_update_steps_per_epoch)
     
     train_device_loader = pl.MpDeviceLoader(train_loader, device)
+    from tqdm import tqdm
+    progress_bar = tqdm(range(training_args.max_steps), disable=not rank==0)
     for epoch in range(0, num_train_epochs):
         model.train()
         for step, batch in enumerate(train_device_loader):
@@ -166,6 +168,7 @@ def main(rank):
             lr_scheduler.step()
             
             global_step = epoch * num_update_steps_per_epoch + step
+            progress_bar.update(global_step)
             
             if global_step > 0 and global_step % training_args.save_steps == 0:
                 if rank==0:
@@ -178,7 +181,7 @@ def main(rank):
                     tokenizer.save_pretrained(save_path)
 
             # 특정 스텝마다 wandb에 로깅
-            if global_step > 0 and global_step % training_args.logging_steps == 0:
+            if global_step % training_args.logging_steps == 0:
                 if rank==0:
                     current_lr = optimizer.param_groups[0]["lr"]
                     wandb.log({"loss": loss.item(), "lr": current_lr}, step=global_step)
