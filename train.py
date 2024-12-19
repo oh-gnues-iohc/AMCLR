@@ -6,6 +6,7 @@ import pyarrow.dataset as ds
 import pyarrow.fs as pafs
 from datasets import Dataset
 from dataclasses import dataclass, field
+import torch.distributed as dist
 from typing import Optional
 
 import torch_xla
@@ -110,6 +111,7 @@ def main():
 def _mp_fn(index):
     # For xla_spawn (TPUs)
     xr.initialize_cache(f'/tmp/xla_cache_{index}', readonly=False)
+    dist.init_process_group('xla', init_method='xla://')
     main()
 
 
