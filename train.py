@@ -11,6 +11,7 @@ from typing import Optional
 import torch_xla.core.xla_model as xm
 import torch_xla.utils.utils as xu
 
+import torch_xla.distributed.parallel_loader as pl
 import torch
 import wandb
 import torch_xla
@@ -153,9 +154,10 @@ def main(rank):
     num_update_steps_per_epoch = math.ceil(len(train_loader))
     num_train_epochs = math.ceil(training_args.max_steps / num_update_steps_per_epoch)
     
+    train_device_loader = pl.MpDeviceLoader(train_loader, device)
     for epoch in range(0, num_train_epochs):
         model.train()
-        for step, batch in enumerate(train_loader):
+        for step, batch in enumerate(train_device_loader):
             optimizer.zero_grad()
             outputs = model(**batch)
             loss = outputs.loss
