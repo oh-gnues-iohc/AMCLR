@@ -24,7 +24,8 @@ from transformers import (
     TrainingArguments,
     HfArgumentParser,
     set_seed,
-    get_scheduler
+    get_scheduler,
+    DefaultDataCollator
 )
 from transformers.models.electra import ElectraConfig
 
@@ -145,6 +146,7 @@ def main(rank):
         batch_size=8,
         sampler=train_sampler,
         drop_last=True,
+        collate_fn=DefaultDataCollator(),
         shuffle=False if train_sampler else True,
         num_workers=4)
     import math
