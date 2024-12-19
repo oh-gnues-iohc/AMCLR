@@ -8,7 +8,11 @@ from datasets import Dataset
 from dataclasses import dataclass, field
 import torch.distributed as dist
 from typing import Optional
+import torch_xla.core.xla_model as xm
+import torch_xla.utils.utils as xu
 
+import torch
+import wandb
 import torch_xla
 import torch_xla.runtime as xr
 
@@ -20,6 +24,7 @@ from transformers import (
     TrainingArguments,
     HfArgumentParser,
     set_seed,
+    get_scheduler
 )
 from transformers.models.electra import ElectraConfig
 
@@ -28,14 +33,6 @@ logger = logging.getLogger(__name__)
 MODEL_SIZES = ["small", "base", "large"]
 MODEL_TYPES = ["AMCLR", "ELECTRA", "AMOS"]
 
-def setup(rank, world_size):
-    os.environ['PJRT_DEVICE'] = 'TPU'
-
-    # initialize the xla process group
-    dist.init_process_group("xla", rank=rank, world_size=world_size)
-
-def cleanup():
-    dist.destroy_process_group()
 
 @dataclass
 class ModelArguments:
@@ -77,9 +74,11 @@ def main(rank):
     assert new_rank == rank
     world_size = xr.world_size()
 
+    dist.init_process_group('xla', init_method='xla://')
     logger.info(f"Running basic DDP example on rank {rank}.")
-    setup(rank, world_size)
 
+    if xr.is_master_ordinal():
+        wandb.init(project="my_project", name="my_run")
     # Log training parameters
     # logger.info(f"Training/evaluation parameters {training_args}")
 
@@ -108,22 +107,89 @@ def main(rank):
     tokenizer = AutoTokenizer.from_pretrained(disc_config_path)
 
     # Initialize models
+    device = xm.xla_device()
     gen = gen_model(ElectraConfig.from_pretrained(gen_config_path), tokenizer.all_special_ids)
-    disc = disc_model(ElectraConfig.from_pretrained(disc_config_path), tokenizer.all_special_ids, gen)
+    model = disc_model(ElectraConfig.from_pretrained(disc_config_path), tokenizer.all_special_ids, gen).to(device)
 
-    # Log model parameters
-    # n_params = sum(p.numel() for p in disc.parameters())
-    # logger.info(f"Training new model from scratch - Total size={n_params / 2**20:.2f}M params")
+    xm.broadcast_master_param(model)
 
-    # Initialize Trainer
-    trainer = Trainer(
-        model=disc,
-        args=training_args,
-        train_dataset=datasets
+    no_decay = ["bias", "LayerNorm.weight"]
+    optimizer_grouped_parameters = [
+        {
+            "params": [p for n, p in model.named_parameters() if not any(nd in n for nd in no_decay)],
+            "weight_decay": training_args.weight_decay,
+        },
+        {
+            "params": [p for n, p in model.named_parameters() if any(nd in n for nd in no_decay)],
+            "weight_decay": 0.0,
+        },
+    ]
+    
+    optimizer = torch.optim.AdamW(optimizer_grouped_parameters, lr=training_args.learning_rate, eps=training_args.adam_epsilon)
+    
+    lr_scheduler = get_scheduler(
+        name="linear",
+        optimizer=optimizer,
+        num_warmup_steps=training_args.warmup_steps,
+        num_training_steps=training_args.max_steps
     )
 
-    # Train the model
-    trainer.train()
+
+    train_sampler = torch.utils.data.distributed.DistributedSampler(
+        datasets,
+        num_replicas=xr.world_size(),
+        rank=xr.global_ordinal(),
+        shuffle=True)
+    train_loader = torch.utils.data.DataLoader(
+        datasets,
+        batch_size=8,
+        sampler=train_sampler,
+        drop_last=True,
+        shuffle=False if train_sampler else True,
+        num_workers=4)
+    import math
+    num_update_steps_per_epoch = math.ceil(len(train_loader))
+    num_train_epochs = math.ceil(training_args.max_steps / num_update_steps_per_epoch)
+    
+    for epoch in range(0, num_train_epochs):
+        model.train()
+        for step, batch in enumerate(train_loader):
+            optimizer.zero_grad()
+            outputs = model(**batch)
+            loss = outputs.loss
+            loss.backward()
+            xm.optimizer_step(optimizer)
+            lr_scheduler.step()
+            
+            global_step = epoch * num_update_steps_per_epoch + step
+            
+            if global_step > 0 and global_step % training_args.save_steps == 0:
+                if xr.is_master_ordinal():
+                    save_path = os.path.join(training_args.output_dir, f"disc-checkpoint-{global_step}")
+                    xm.master_print(f"Saving model checkpoint to {save_path}")
+                    model.electra.save_pretrained(save_path)
+                    save_path = os.path.join(training_args.output_dir, f"gen-checkpoint-{global_step}")
+                    xm.master_print(f"Saving model checkpoint to {save_path}")
+                    model.gen.save_pretrained(save_path)
+                    tokenizer.save_pretrained(save_path)
+
+            # 특정 스텝마다 wandb에 로깅
+            if global_step > 0 and global_step % training_args.logging_steps == 0:
+                if xr.is_master_ordinal():
+                    current_lr = optimizer.param_groups[0]["lr"]
+                    wandb.log({"loss": loss.item(), "lr": current_lr}, step=global_step)
+            
+            if global_step >= training_args.max_steps:
+                break
+    
+    # trainer = Trainer(
+    #     model=disc,
+    #     args=training_args,
+    #     train_dataset=datasets
+    # )
+
+    # # Train the model
+    # trainer.train()
 
 def _mp_fn(index):
     # For xla_spawn (TPUs)
