@@ -177,7 +177,7 @@ def main(rank):
             if global_step % training_args.logging_steps == 0:
                 if rank==0:
                     current_lr = optimizer.param_groups[0]["lr"]
-                    loss.detach().to("cpu").item()
+                    loss = loss.detach().to("cpu").item()
                     wandb.log({"loss": loss, "lr": current_lr}, step=global_step)
                     progress_bar.set_postfix({"Loss": loss})
             
