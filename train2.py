@@ -80,7 +80,7 @@ def main(rank):
     logger.info(f"Running basic DDP example on rank {rank}.")
 
     if rank==0:
-        wandb.init(project="my_project", name="my_run")
+        wandb.init(project="my_project", name=f"my_run_{world_size}")
     set_seed(training_args.seed)
     datasets = load_from_disk(data_args.dataset_name)["train"].shuffle(8324)
 
