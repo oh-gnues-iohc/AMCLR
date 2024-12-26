@@ -177,7 +177,9 @@ def main(rank):
             if global_step % training_args.logging_steps == 0:
                 if rank==0:
                     current_lr = optimizer.param_groups[0]["lr"]
-                    wandb.log({"loss": loss.detach().to("cpu").item(), "lr": current_lr}, step=global_step)
+                    loss.detach().to("cpu").item()
+                    wandb.log({"loss": loss, "lr": current_lr}, step=global_step)
+                    progress_bar.set_postfix({"Loss": loss})
             
             if global_step >= training_args.max_steps:
                 break
