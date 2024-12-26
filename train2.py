@@ -150,6 +150,7 @@ def main(rank):
     
     from tqdm import tqdm
     gloabl_batch = 0
+    loss = 0.0
     progress_bar = tqdm(range(training_args.max_steps), disable=not rank==0)
     for epoch in range(0, num_train_epochs):
         model.train()
@@ -181,7 +182,7 @@ def main(rank):
                     current_lr = optimizer.param_groups[0]["lr"]
                     loss = loss.detach().to("cpu").item()
                     wandb.log({"loss": loss, "lr": current_lr, "gloabl_batch": gloabl_batch}, step=global_step)
-                    progress_bar.set_postfix({"loss": loss, "gloabl_batch": gloabl_batch})
+            progress_bar.set_postfix({"loss": loss, "gloabl_batch": gloabl_batch, "global_step": global_step})
             
             if global_step >= training_args.max_steps:
                 break
