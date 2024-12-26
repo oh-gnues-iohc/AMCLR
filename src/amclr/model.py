@@ -336,5 +336,5 @@ class AMCLR(ElectraForPreTraining):
             )  * self.l2
             
         loss = disc_loss + sims_loss
-        output = (None,)
+        output = (global_disc_cls_hidden_state.size(0),)
         return ((loss,) + output) if loss is not None else output
