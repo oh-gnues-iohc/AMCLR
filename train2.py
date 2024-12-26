@@ -159,7 +159,7 @@ def main(rank):
             loss = outputs[0]
             gloabl_batch = outputs[1]
             loss.backward()
-            xm.optimizer_step(optimizer)
+            xm.optimizer_step(optimizer, barrier=True)
             lr_scheduler.step()
             
             global_step = epoch * num_update_steps_per_epoch + step
