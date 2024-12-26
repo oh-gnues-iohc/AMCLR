@@ -182,7 +182,7 @@ def main(rank):
                     current_lr = optimizer.param_groups[0]["lr"]
                     loss = loss.detach().to("cpu").item()
                     wandb.log({"loss": loss, "lr": current_lr, "gloabl_batch": gloabl_batch}, step=global_step)
-            progress_bar.set_postfix({"loss": loss, "gloabl_batch": gloabl_batch, "global_step": global_step})
+                    progress_bar.set_postfix({"loss": loss, "gloabl_batch": gloabl_batch, "global_step": global_step})
             
             if global_step >= training_args.max_steps:
                 break
