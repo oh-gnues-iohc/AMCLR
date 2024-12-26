@@ -288,20 +288,13 @@ class AMCLR(ElectraForPreTraining):
             all_c_vectors = all_c_vectors.to(gen_cls_hidden_state.device)
 
             # Create a tensor index for the local rank
-            local_rank_tensor = torch.tensor(local_rank, device=all_q_vectors.device).unsqueeze(0).unsqueeze(-1).unsqueeze(-1).unsqueeze(-1)
-            temp_mask = torch.arange(all_q_vectors.size(0), device=all_q_vectors.device).view(-1, 1, 1, 1) == local_rank_tensor
-            # Replace the local_rank slice with the original tensors
-            all_q_vectors = torch.where(
-                temp_mask,
-                disc_cls_hidden_state.unsqueeze(0),
-                all_q_vectors
-            )
-
-            all_c_vectors = torch.where(
-                temp_mask,
-                gen_cls_hidden_state.unsqueeze(0),
-                all_c_vectors
-            )
+            for i in range(distributed_world_size):
+                if i == local_rank:
+                    all_q_vectors[i] = disc_cls_hidden_state
+                    all_c_vectors[i] = gen_cls_hidden_state
+                else:
+                    all_q_vectors[i] = all_q_vectors[i]
+                    all_c_vectors[i] = all_c_vectors[i]
 
             global_disc_cls_hidden_state = all_q_vectors.view(-1, disc_cls_hidden_state.size(-1))  # Shape: [world_size * word_size * batch_size, dim]
             global_gen_cls_hidden_state = all_c_vectors.view(-1, gen_cls_hidden_state.size(-1))    # Shape: [world_size * word_size * batch_size, dim]
