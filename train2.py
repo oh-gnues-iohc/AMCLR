@@ -148,12 +148,12 @@ def main(rank):
         drop_last=True,
         collate_fn=DefaultDataCollator(),
         shuffle=False if train_sampler else True,
-        num_workers=4)
+        num_workers=8)
     import math
     num_update_steps_per_epoch = math.ceil(len(train_loader))
     num_train_epochs = math.ceil(training_args.max_steps / num_update_steps_per_epoch)
     
-    train_device_loader = pl.MpDeviceLoader(train_loader, device, loader_prefetch_size=64, device_prefetch_size=32, host_to_device_transfer_threads=4)
+    train_device_loader = pl.MpDeviceLoader(train_loader, device, loader_prefetch_size=128, device_prefetch_size=64, host_to_device_transfer_threads=16)
     
     from tqdm import tqdm
     gloabl_batch = 0
