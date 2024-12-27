@@ -152,7 +152,7 @@ def main(rank):
     num_update_steps_per_epoch = math.ceil(len(train_loader))
     num_train_epochs = math.ceil(training_args.max_steps / num_update_steps_per_epoch)
     
-    train_device_loader = pl.MpDeviceLoader(train_loader, device, loader_prefetch_size=32, device_prefetch_size=16, host_to_device_transfer_threads=4)
+    train_device_loader = pl.MpDeviceLoader(train_loader, device, loader_prefetch_size=64, device_prefetch_size=32, host_to_device_transfer_threads=4)
     
     from tqdm import tqdm
     gloabl_batch = 0
