@@ -162,7 +162,7 @@ class AMCLRMLM(ElectraForMaskedLM):
         masking_scores_hard = (masking_scores_hard - masking_scores_soft.squeeze(-1)).detach() + masking_scores_soft.squeeze(-1)  # Shape: [batch, seq_len]
         
         # Convert to float for discriminator labels
-        disc_labels = masking_scores_hard.detach().float()  # Shape: [batch, seq_len]
+        disc_labels = masking_scores_hard.detach().long()  # Shape: [batch, seq_len]
         
         # Expand dimensions to match prediction_scores_hard
         masking_scores_hard = masking_scores_hard.unsqueeze(-1)  # Shape: [batch, seq_len, 1]
@@ -187,12 +187,6 @@ class GradMultiply(Function):
 def grad_multiply(x, lambd=-1):
     return GradMultiply.apply(x, lambd)
 
-
-def unwrap_model(model):
-    if hasattr(model, "module"):
-        return unwrap_model(model.module)
-    else:
-        return model
 
 class AMCLR(ElectraForPreTraining):
 
@@ -250,8 +244,8 @@ class AMCLR(ElectraForPreTraining):
         replaced_embeds = torch.matmul(probs, self.get_input_embeddings().weight)
         
         mask_indices = labels == 1
-        inputs_embeds = torch.where(mask_indices.unsqueeze(-1), replaced_embeds, inputs_embeds)
-        # inputs_embeds[mask_indices] = replaced_embeds[mask_indices]
+        # inputs_embeds = torch.where(mask_indices.unsqueeze(-1), replaced_embeds, inputs_embeds)
+        inputs_embeds[mask_indices] = replaced_embeds[mask_indices]
         
         discriminator_hidden_states = self.electra(
             None,
@@ -313,7 +307,7 @@ class AMCLR(ElectraForPreTraining):
         loss = None
         if labels is not None:
             loss_fct = nn.BCEWithLogitsLoss(reduction='none')
-            disc_loss = loss_fct(logits.view(-1, discriminator_sequence_output.shape[1]), labels)
+            disc_loss = loss_fct(logits.view(-1, discriminator_sequence_output.shape[1]), labels.float())
             
             masked_loss = disc_loss * attention_mask
             disc_loss = (masked_loss.sum() / attention_mask.sum()) * self.l1

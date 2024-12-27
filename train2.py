@@ -56,6 +56,12 @@ class DataTrainingArguments:
     )
 
 
+def unwrap_model(model):
+    if hasattr(model, "module"):
+        return unwrap_model(model.module)
+    else:
+        return model
+
 # xr.use_spmd()
 def main(rank):
     
@@ -151,7 +157,7 @@ def main(rank):
     from tqdm import tqdm
     gloabl_batch = 0
     loss = 0.0
-    progress_bar = tqdm(range(training_args.max_steps), disable=not rank==0)
+    progress_bar = tqdm(range(training_args.max_steps), disable=not xm.is_master_ordinal(local=False))
     for epoch in range(0, num_train_epochs):
         model.train()
         for step, batch in enumerate(train_device_loader):
@@ -167,18 +173,31 @@ def main(rank):
             progress_bar.update(1)
             
             if global_step > 0 and global_step % training_args.save_steps == 0:
-                if rank==0:
+                xm.rendezvous("before_saving_checkpoint")
+                if xm.is_master_ordinal(local=False):
+                    unwrapped_model = unwrap_model(model)
+                    gen = unwrapped_model.gen
+                    disc = unwrapped_model.electra
                     save_path = os.path.join(training_args.output_dir, f"disc-checkpoint-{global_step}")
                     xm.master_print(f"Saving model checkpoint to {save_path}")
-                    model.electra.save_pretrained(save_path)
+                    disc.save_pretrained(
+                    save_path,
+                    state_dict=xm._maybe_convert_to_cpu(disc.state_dict()),
+                    save_function=xm.save,
+                    )
                     save_path = os.path.join(training_args.output_dir, f"gen-checkpoint-{global_step}")
                     xm.master_print(f"Saving model checkpoint to {save_path}")
-                    model.gen.save_pretrained(save_path)
-                    tokenizer.save_pretrained(save_path)
+                    gen.save_pretrained(
+                    save_path,
+                    state_dict=xm._maybe_convert_to_cpu(gen.state_dict()),
+                    save_function=xm.save,
+                    )
+                    
+                xm.rendezvous("after_saving_checkpoint")
 
             # 특정 스텝마다 wandb에 로깅
             if global_step % training_args.logging_steps == 0:
-                if rank==0:
+                if xm.is_master_ordinal(local=False):
                     current_lr = optimizer.param_groups[0]["lr"]
                     loss = loss.detach().to("cpu").item()
                     wandb.log({"loss": loss, "lr": current_lr, "gloabl_batch": gloabl_batch}, step=global_step)
