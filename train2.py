@@ -10,6 +10,7 @@ import torch.distributed as dist
 from typing import Optional
 import torch_xla.core.xla_model as xm
 import torch_xla.utils.utils as xu
+import torch_xla as xla
 
 import torch_xla.distributed.parallel_loader as pl
 import torch
@@ -161,47 +162,48 @@ def main(rank):
     for epoch in range(0, num_train_epochs):
         model.train()
         for step, batch in enumerate(train_device_loader):
-            optimizer.zero_grad()
-            outputs = model(**batch)
-            loss = outputs[0]
-            gloabl_batch = outputs[1]
-            loss.backward()
-            xm.optimizer_step(optimizer, barrier=True)
-            lr_scheduler.step()
-            
-            global_step = epoch * num_update_steps_per_epoch + step
-            progress_bar.update(1)
-            
-            if global_step > 0 and global_step % training_args.save_steps == 0:
-                xm.rendezvous("before_saving_checkpoint")
-                if xm.is_master_ordinal(local=False):
-                    unwrapped_model = unwrap_model(model)
-                    gen = unwrapped_model.gen
-                    disc = unwrapped_model.electra
-                    save_path = os.path.join(training_args.output_dir, f"disc-checkpoint-{global_step}")
-                    xm.master_print(f"Saving model checkpoint to {save_path}")
-                    disc.save_pretrained(
-                    save_path,
-                    state_dict=xm._maybe_convert_to_cpu(disc.state_dict()),
-                    save_function=xm.save,
-                    )
-                    save_path = os.path.join(training_args.output_dir, f"gen-checkpoint-{global_step}")
-                    xm.master_print(f"Saving model checkpoint to {save_path}")
-                    gen.save_pretrained(
-                    save_path,
-                    state_dict=xm._maybe_convert_to_cpu(gen.state_dict()),
-                    save_function=xm.save,
-                    )
-                    
-                xm.rendezvous("after_saving_checkpoint")
+            with xla.step():
+                optimizer.zero_grad()
+                outputs = model(**batch)
+                loss = outputs[0]
+                gloabl_batch = outputs[1]
+                loss.backward()
+                xm.optimizer_step(optimizer, barrier=True)
+                lr_scheduler.step()
+                
+                global_step = epoch * num_update_steps_per_epoch + step
+                progress_bar.update(1)
+                
+                if global_step > 0 and global_step % training_args.save_steps == 0:
+                    xm.rendezvous("before_saving_checkpoint")
+                    if xm.is_master_ordinal(local=False):
+                        unwrapped_model = unwrap_model(model)
+                        gen = unwrapped_model.gen
+                        disc = unwrapped_model.electra
+                        save_path = os.path.join(training_args.output_dir, f"disc-checkpoint-{global_step}")
+                        xm.master_print(f"Saving model checkpoint to {save_path}")
+                        disc.save_pretrained(
+                        save_path,
+                        state_dict=xm._maybe_convert_to_cpu(disc.state_dict()),
+                        save_function=xm.save,
+                        )
+                        save_path = os.path.join(training_args.output_dir, f"gen-checkpoint-{global_step}")
+                        xm.master_print(f"Saving model checkpoint to {save_path}")
+                        gen.save_pretrained(
+                        save_path,
+                        state_dict=xm._maybe_convert_to_cpu(gen.state_dict()),
+                        save_function=xm.save,
+                        )
+                        
+                    xm.rendezvous("after_saving_checkpoint")
 
-            # 특정 스텝마다 wandb에 로깅
-            if global_step % training_args.logging_steps == 0:
-                if xm.is_master_ordinal(local=False):
-                    current_lr = optimizer.param_groups[0]["lr"]
-                    loss = loss.detach().to("cpu").item()
-                    wandb.log({"loss": loss, "lr": current_lr, "gloabl_batch": gloabl_batch}, step=global_step)
-                    progress_bar.set_postfix({"loss": loss, "gloabl_batch": gloabl_batch, "global_step": global_step})
+                # 특정 스텝마다 wandb에 로깅
+                if global_step % training_args.logging_steps == 0:
+                    if xm.is_master_ordinal(local=False):
+                        current_lr = optimizer.param_groups[0]["lr"]
+                        loss = loss.detach().to("cpu").item()
+                        wandb.log({"loss": loss, "lr": current_lr, "gloabl_batch": gloabl_batch}, step=global_step)
+                        progress_bar.set_postfix({"loss": loss, "gloabl_batch": gloabl_batch, "global_step": global_step})
             
             if global_step >= training_args.max_steps:
                 break
