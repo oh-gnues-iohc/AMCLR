@@ -162,14 +162,13 @@ def main(rank):
     for epoch in range(0, num_train_epochs):
         model.train()
         for step, batch in enumerate(train_device_loader):
-            with xla.step():
-                optimizer.zero_grad()
-                outputs = model(**batch)
-                loss = outputs[0]
-                gloabl_batch = outputs[1]
-                loss.backward()
-                xm.optimizer_step(optimizer, barrier=True)
-                lr_scheduler.step()
+            optimizer.zero_grad()
+            outputs = model(**batch)
+            loss = outputs[0]
+            gloabl_batch = outputs[1]
+            loss.backward()
+            xm.optimizer_step(optimizer, barrier=True)
+            lr_scheduler.step()
                 
             global_step = epoch * num_update_steps_per_epoch + step
             progress_bar.update(1)
