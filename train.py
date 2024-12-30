@@ -114,7 +114,6 @@ def main(rank):
 
 def _mp_fn(index):
     # For xla_spawn (TPUs)
-    xr.initialize_cache(f'/tmp/xla_cache_{index}', readonly=False)
     main(index)
 
 
