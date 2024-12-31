@@ -143,7 +143,7 @@ def main(rank):
         shuffle=True)
     train_loader = torch.utils.data.DataLoader(
         datasets,
-        batch_size=8,
+        batch_size=16,
         sampler=train_sampler,
         drop_last=True,
         collate_fn=DefaultDataCollator(),
