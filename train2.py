@@ -177,7 +177,7 @@ def main(rank):
                 xm.master_print(f"Get in saving steps: {global_step}")
                 unwrapped_model = unwrap_model(model)
                 xm.master_print(f"Get unwarp model")
-                gen = unwrapped_model.gen
+                gen = unwrapped_model.generator
                 disc = unwrapped_model.electra
                 save_path = os.path.join(training_args.output_dir, f"disc-checkpoint-{global_step}")
                 xm.master_print(f"Saving model checkpoint to {save_path}")
