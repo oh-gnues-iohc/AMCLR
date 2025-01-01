@@ -195,7 +195,7 @@ def main(rank):
                 is_main_process=xm.is_master_ordinal(local=False),
                 state_dict=xm._maybe_convert_to_cpu(gen.state_dict()),
                 save_function=xm.save,
-                # )
+                )
 
             # 특정 스텝마다 wandb에 로깅
             if global_step % training_args.logging_steps == 0:
