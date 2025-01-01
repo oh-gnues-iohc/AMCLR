@@ -175,7 +175,7 @@ def main(rank):
             
             if global_step > 0 and global_step % training_args.save_steps == 0:
                 xm.mark_step()
-                xm.rendezvous("saving_checkpoint")
+                # xm.rendezvous("saving_checkpoint")
                 unwrapped_model = unwrap_model(model)
                 gen = unwrapped_model.gen
                 disc = unwrapped_model.electra
@@ -202,7 +202,7 @@ def main(rank):
                     current_lr = optimizer.param_groups[0]["lr"]
                     loss = loss.detach().to("cpu").item()
                     wandb.log({"loss": loss, "lr": current_lr, "gloabl_batch": gloabl_batch}, step=global_step)
-                    progress_bar.set_postfix({"loss": loss, "gloabl_batch": gloabl_batch, "global_step": global_step})
+                    # progress_bar.set_postfix({"loss": loss, "gloabl_batch": gloabl_batch, "global_step": global_step})
             
             if global_step >= training_args.max_steps:
                 break
