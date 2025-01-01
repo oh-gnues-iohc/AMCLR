@@ -174,26 +174,27 @@ def main(rank):
             progress_bar.update(1)
             
             if global_step > 0 and global_step % training_args.save_steps == 0:
-                xm.master_print(f"Get in saving steps: {global_step}")
+                
+                xm.mark_step()
+                xm.rendezvous("saving_checkpoint")
                 unwrapped_model = unwrap_model(model)
-                xm.master_print(f"Get unwarp model")
                 gen = unwrapped_model.generator
                 disc = unwrapped_model.electra
                 save_path = os.path.join(training_args.output_dir, f"disc-checkpoint-{global_step}")
                 xm.master_print(f"Saving model checkpoint to {save_path}")
-                # disc.save_pretrained(
-                # save_path,
-                # is_main_process=xm.is_master_ordinal(local=False),
-                # state_dict=xm._maybe_convert_to_cpu(disc.state_dict()),
-                # save_function=xm.save,
-                # )
-                # save_path = os.path.join(training_args.output_dir, f"gen-checkpoint-{global_step}")
-                # xm.master_print(f"Saving model checkpoint to {save_path}")
-                # gen.save_pretrained(
-                # save_path,
-                # is_main_process=xm.is_master_ordinal(local=False),
-                # state_dict=xm._maybe_convert_to_cpu(gen.state_dict()),
-                # save_function=xm.save,
+                disc.save_pretrained(
+                save_path,
+                is_main_process=xm.is_master_ordinal(local=False),
+                state_dict=xm._maybe_convert_to_cpu(disc.state_dict()),
+                save_function=xm.save,
+                )
+                save_path = os.path.join(training_args.output_dir, f"gen-checkpoint-{global_step}")
+                xm.master_print(f"Saving model checkpoint to {save_path}")
+                gen.save_pretrained(
+                save_path,
+                is_main_process=xm.is_master_ordinal(local=False),
+                state_dict=xm._maybe_convert_to_cpu(gen.state_dict()),
+                save_function=xm.save,
                 # )
 
             # 특정 스텝마다 wandb에 로깅
