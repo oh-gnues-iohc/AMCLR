@@ -174,7 +174,9 @@ def main(rank):
             progress_bar.update(1)
             
             if global_step > 0 and global_step % training_args.save_steps == 0:
+                xm.master_print(f"Get in saving steps: {global_step}")
                 unwrapped_model = unwrap_model(model)
+                xm.master_print(f"Get unwarp model")
                 gen = unwrapped_model.gen
                 disc = unwrapped_model.electra
                 save_path = os.path.join(training_args.output_dir, f"disc-checkpoint-{global_step}")
