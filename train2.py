@@ -174,8 +174,6 @@ def main(rank):
             progress_bar.update(1)
             
             if global_step > 0 and global_step % training_args.save_steps == 0:
-                xm.mark_step()
-                # xm.rendezvous("saving_checkpoint")
                 unwrapped_model = unwrap_model(model)
                 gen = unwrapped_model.gen
                 disc = unwrapped_model.electra
