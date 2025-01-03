@@ -292,19 +292,12 @@ class AMCLR(ElectraForPreTraining):
             active_loss = attention_mask.view(-1, discriminator_sequence_output.shape[1]) == 1
             active_logits = logits.view(-1, discriminator_sequence_output.shape[1])[active_loss]
             active_labels = labels[active_loss]
-            disc_loss = loss_fct(active_logits, active_labels.float()) * 50
+            disc_loss = loss_fct(active_logits, active_labels.float()) * self.l1
                                     
             scores = torch.matmul(global_disc_cls_hidden_state, torch.transpose(global_gen_cls_hidden_state, 0, 1))
 
-            sims_loss = F.cross_entropy(scores, labels)
+            sims_loss = F.cross_entropy(scores, positive_idx_per_question) * self.l2
             
-            # softmax_scores = F.log_softmax(scores, dim=1)
-
-            # sims_loss = F.nll_loss(
-            #     softmax_scores,
-            #     positive_idx_per_question,
-            #     reduction="mean",
-            # )  * self.l2
             
         loss = disc_loss + sims_loss
         output = (global_disc_cls_hidden_state.size(0),)
