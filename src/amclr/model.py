@@ -71,7 +71,7 @@ class AMCLRMLM(ElectraForMaskedLM):
         self.masking_ratio = 0.15
         self.temperature = 0.3
         self.generator_score_head = nn.Linear(config.embedding_size, 1)
-        self.num_maskings = max(int(512 * masking_ratio), 1)
+        # self.num_maskings = max(int(512 * masking_ratio), 1)
         self.min_value = torch.finfo(self.dtype).min
         
         self.post_init()
