@@ -147,7 +147,7 @@ class AMCLRMLM(ElectraForMaskedLM):
         num_maskings = 77
         
         # Squeeze the last dimension for topk operation
-        masking_scores_squeezed = masking_scores.squeeze(-1)  # Shape: [batch, seq_len]
+        # masking_scores_squeezed = masking_scores.squeeze(-1)  # Shape: [batch, seq_len]
         
         
         # Apply Gumbel Softmax to masking_scores
@@ -159,13 +159,13 @@ class AMCLRMLM(ElectraForMaskedLM):
         
         masking_scores_hard = torch.zeros_like(masking_scores).scatter_(-1, topk_indices, 1.0)
         # 원-핫 인코딩
-        masking_scores_hard = masking_scores_hard - masking_scores_soft.detach() + masking_scores_soft
+        masking_scores_hard = (masking_scores_hard - masking_scores_soft.detach()) + masking_scores_soft
         
         # Convert to float for discriminator labels
         disc_labels = masking_scores_hard.detach().long()  # Shape: [batch, seq_len]
         
         # Expand dimensions to match prediction_scores_hard
-        masking_scores_hard = masking_scores_hard.unsqueeze(-1)  # Shape: [batch, seq_len, 1]
+        # masking_scores_hard = masking_scores_hard.unsqueeze(-1)  # Shape: [batch, seq_len, 1]
         
         # Compute the final probabilities
         probs = masking_scores_hard * prediction_scores_hard  # Shape: [batch, seq_len, vocab_size]
