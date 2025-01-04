@@ -147,7 +147,7 @@ class AMCLRMLM(ElectraForMaskedLM):
         num_maskings = 77
         
         # Squeeze the last dimension for topk operation
-        masking_scores_squeezed = masking_scores.squeeze(-1)  # Shape: [batch, seq_len]
+        # masking_scores_squeezed = masking_scores.squeeze(-1)  # Shape: [batch, seq_len]
         
         
         # Apply Gumbel Softmax to masking_scores
@@ -246,8 +246,8 @@ class AMCLR(ElectraForPreTraining):
         replaced_embeds = torch.matmul(probs, self.get_input_embeddings().weight)
         
         mask_indices = labels == 1
-        # inputs_embeds = torch.where(mask_indices.unsqueeze(-1), replaced_embeds, inputs_embeds)
-        inputs_embeds[mask_indices] = replaced_embeds[mask_indices]
+        inputs_embeds = torch.where(mask_indices.unsqueeze(-1), replaced_embeds, inputs_embeds)
+        # inputs_embeds[mask_indices] = replaced_embeds[mask_indices]
         
         discriminator_hidden_states = self.electra(
             None,
