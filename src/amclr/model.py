@@ -157,7 +157,8 @@ class AMCLRMLM(ElectraForMaskedLM):
         # Create hard masking scores based on topk_indices
         
         one_hot_topk = F.one_hot(topk_indices, num_classes=masking_scores.size(1)) 
-        masking_scores_hard = one_hot_topk.sum(dim=1).unsqueeze(-1)
+        masking_scores_hard = one_hot_topk.sum(dim=1)#.unsqueeze(-1)
+        
         # masking_scores_hard = torch.zeros_like(masking_scores).scatter_(-1, topk_indices, 1.0)
         # 원-핫 인코딩
         masking_scores_hard = (masking_scores_hard - masking_scores_soft.detach()) + masking_scores_soft
