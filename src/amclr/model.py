@@ -289,6 +289,7 @@ class AMCLR(ElectraForPreTraining):
         
         loss = None
         if labels is not None:
+            loss_fct = nn.BCEWithLogitsLoss()
             active_loss = attention_mask.view(-1, discriminator_sequence_output.shape[1]) == 1
             active_logits = logits.view(-1, discriminator_sequence_output.shape[1])[active_loss]
             active_labels = labels[active_loss]
