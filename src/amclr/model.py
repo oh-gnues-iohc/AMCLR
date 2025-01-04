@@ -308,11 +308,11 @@ class AMCLR(ElectraForPreTraining):
         
         loss = None
         if labels is not None:
-            loss_fct = nn.BCEWithLogitsLoss()
-            active_loss = attention_mask.view(-1, discriminator_sequence_output.shape[1]) == 1
-            active_logits = logits.view(-1, discriminator_sequence_output.shape[1])[active_loss]
-            active_labels = labels[active_loss]
-            disc_loss = loss_fct(active_logits, active_labels.float()) * self.l1
+            loss_fct = nn.BCEWithLogitsLoss(reduction='none')
+            disc_loss = loss_fct(logits.view(-1, discriminator_sequence_output.shape[1]), labels.float())
+            
+            masked_loss = disc_loss * attention_mask
+            disc_loss = (masked_loss.sum() / attention_mask.sum()) * self.l1
                                     
             scores = torch.matmul(global_disc_cls_hidden_state, torch.transpose(global_gen_cls_hidden_state, 0, 1))
 
