@@ -108,44 +108,89 @@ class AMCLRMLM(ElectraForMaskedLM):
         similarity = self.generator_lm_head(prediction_scores) # batch_size, seq_len, vocab_size
         scores = self.generator_score_head(prediction_scores).squeeze(-1) # [batch_size, seq_len]
         
-        mask = torch.zeros_like(similarity)
-        
-        batch_indices = torch.arange(similarity.size(0)).unsqueeze(1)
-        seq_indices = torch.arange(similarity.size(1)).unsqueeze(0)
-        mask[batch_indices, seq_indices, input_ids] = torch.finfo(self.dtype).min
-        mask[:, :, :100] = torch.finfo(self.dtype).min
-        mask[:, :, 104:999] = torch.finfo(self.dtype).min
-        masked_similarities = similarity + mask #[batch_size, seq_len, vocab_size]
-        
-        batch_size, seq_len, hidden_dim = generator_sequence_output.shape
+        mask = torch.zeros_like(similarity)  # [batch_size, seq_len, vocab_size]
 
-        # Create special token mask
+        # (1) input_ids가 위치한 곳을 -inf로 만들기 위한 one_hot 마스크
+        #     input_ids.shape = [batch_size, seq_len]
+        #     => F.one_hot(input_ids, num_classes=vocab_size).shape = [batch_size, seq_len, vocab_size]
+        one_hot_ids = F.one_hot(input_ids, num_classes=similarity.size(-1)).bool()
+
+        # torch.where(cond, true_val, false_val)을 이용해
+        # cond=True 인 위치에 -inf를 할당하고, 나머지는 기존 mask 값을 둠
+        mask = torch.where(
+            one_hot_ids, 
+            torch.tensor(torch.finfo(self.dtype).min, device=mask.device), 
+            mask
+        )
+
+        # (2) 특정 범위를 -inf로 만들기
+        #     예: mask[:, :, :100] = -inf   => range_mask_1
+        #         mask[:, :, 104:999] = -inf => range_mask_2
+        # 각각 범위를 표시하는 bool 마스크를 만들고, 동일하게 torch.where로 치환
+        vocab_range = torch.arange(similarity.size(-1), device=mask.device)
+        vocab_range = vocab_range.view(1, 1, -1)  # [1, 1, vocab_size] for broadcasting
+
+        # 첫 범위: 0 <= vocab < 100
+        range_mask_1 = (vocab_range < 100)
+        # 두 번째 범위: 104 <= vocab < 999
+        range_mask_2 = (vocab_range >= 104) & (vocab_range < 999)
+        # 두 범위를 OR로 합쳐서 한 번에 처리할 수도, 각각 따로 처리할 수도 있음
+        total_range_mask = range_mask_1 | range_mask_2
+
+        mask = torch.where(
+            total_range_mask,
+            torch.tensor(torch.finfo(self.dtype).min, device=mask.device),
+            mask
+        )
+
+        # 최종적으로 similarity에 mask를 더하여 -inf가 된 부분은 softmax 시 확률 0이 되도록 함
+        masked_similarities = similarity + mask  # [batch_size, seq_len, vocab_size]
+
+        # --------------------------------------------------------------------------------
+        # 문제 2) score_mask[invalid_tokens] = -inf  코드도 in-place advanced indexing
+        # 역시 torch.where로 대체
+        # --------------------------------------------------------------------------------
+        batch_size, seq_len, hidden_dim = generator_sequence_output.shape
         special_tokens = torch.tensor(self.special_token_ids, device=self.device)
-        is_special = (input_ids.unsqueeze(-1) == special_tokens).any(dim=-1)  # [batch_size, seq_len]
+        is_special = (input_ids.unsqueeze(-1) == special_tokens).any(dim=-1)
         non_special_mask = (~is_special).float()
 
-        # Calculate number of tokens to swap
+        # 마스킹할 토큰 수
         num_maskings = max(int(seq_len * self.masking_ratio), 1)
-        
-        score_mask = torch.zeros_like(scores)
-        
+
+        # attention_mask & non_special_mask 합성
         valid_tokens = attention_mask * non_special_mask  # [batch_size, seq_len]
-        invalid_tokens = ~(valid_tokens).bool() # [batch_size, seq_len]
-        score_mask[invalid_tokens] = torch.finfo(self.dtype).min
-        
-        masked_scores = scores + score_mask # [batch_size, seq_len]
-        
-        y_soft = F.gumbel_softmax(masked_scores, hard=False, dim=-1) # [batch_size, seq_len]
+
+        # invalid_tokens 구하기
+        invalid_tokens = (valid_tokens == 0)  # True인 곳이 invalid
+
+        score_mask = torch.zeros_like(scores)  # [batch_size, seq_len]
+        score_mask = torch.where(
+            invalid_tokens.bool(),
+            torch.tensor(torch.finfo(self.dtype).min, device=score_mask.device),
+            score_mask
+        )
+
+        masked_scores = scores + score_mask  # [batch_size, seq_len]
+
+        # Gumbel-Softmax
+        y_soft = F.gumbel_softmax(masked_scores, hard=False, dim=-1)  # [batch_size, seq_len]
         _, topk_indices = y_soft.topk(num_maskings, dim=1)
-        
+
+        # one-hot 형태로 scatter
         topk_hard = torch.zeros_like(masked_scores).scatter_(-1, topk_indices, 1.0)
-        # 원-핫 인코딩
-        top_k_socres = topk_hard - y_soft.detach() + y_soft
-        token_probs = F.gumbel_softmax(masked_similarities, tau=self.temperature, hard=True, dim=-1) # [batch_size, seq_len, vocab_size]
-        
-        probs = token_probs * top_k_socres.unsqueeze(-1)
-        labels = top_k_socres.detach().bool().long()
-        
+        top_k_scores = topk_hard - y_soft.detach() + y_soft  # straight-through 기법
+
+        token_probs = F.gumbel_softmax(
+            masked_similarities, tau=self.temperature, hard=True, dim=-1
+        )  # [batch_size, seq_len, vocab_size]
+
+        # top_k_scores.unsqueeze(-1)와 곱해서 실제로 바꿀 위치만 확률 분포가 나오도록
+        probs = token_probs * top_k_scores.unsqueeze(-1)
+
+        # 라벨도 (top_k_scores > 0)인 곳만 1, 나머지 0 등으로 정의
+        labels = (top_k_scores.detach() > 0).long()
+
         return probs, generator_sequence_output, labels
 
 class GradMultiply(Function):
