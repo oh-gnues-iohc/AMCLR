@@ -224,7 +224,7 @@ class AMCLR(ElectraForPreTraining):
         
         self.cls_representation = nn.Linear(config.hidden_size, self.generator.config.hidden_size)
         self.l1 = 50
-        self.l2 = 0.5
+        self.l2 = 1
 
         self.post_init()
 
@@ -286,29 +286,23 @@ class AMCLR(ElectraForPreTraining):
         group = get_global_group()
         distributed_world_size = get_world_size(group)
         local_rank = get_rank(group)
+        disc_cls_hidden_state = self.cls_representation(discriminator_sequence_output[:, 0, :])
+        gen_cls_hidden_state = generator_sequence_output[:, 0, :]
         
-        
-        
-        disc_cls_hidden_state = self.cls_representation(discriminator_sequence_output)
-        gen_cls_hidden_state = generator_sequence_output
-        
-        input_mask_expanded = (
-            attention_mask.unsqueeze(-1).expand(disc_cls_hidden_state.size()).to(disc_cls_hidden_state.dtype)
-        )
-        disc_cls_hidden_state = torch.sum(disc_cls_hidden_state * input_mask_expanded, 1) / torch.clamp(input_mask_expanded.sum(1), min=1e-9)
-        gen_cls_hidden_state = torch.sum(gen_cls_hidden_state * input_mask_expanded, 1) / torch.clamp(input_mask_expanded.sum(1), min=1e-9)
         # xm.mark_step()
         
         if distributed_world_size > 1:
+            q_vector_to_send = torch.empty_like(disc_cls_hidden_state).cpu().copy_(disc_cls_hidden_state).detach_()
+            ctx_vector_to_send = torch.empty_like(gen_cls_hidden_state).cpu().copy_(gen_cls_hidden_state).detach_()
 
             global_disc_cls_hidden_state = []
             global_gen_cls_hidden_state = []
             
-            all_q_vectors = all_gather(disc_cls_hidden_state.detach(), return_tensor=True) # word_size, batch_size, dim
-            all_c_vectors = all_gather(gen_cls_hidden_state.detach(), return_tensor=True) # word_size, batch_size, dim
+            all_q_vectors = all_gather(q_vector_to_send, return_tensor=False) # word_size, batch_size, dim
+            all_c_vectors = all_gather(ctx_vector_to_send, return_tensor=False) # word_size, batch_size, dim
             
-            all_q_vectors = all_q_vectors.to(disc_cls_hidden_state.device)
-            all_c_vectors = all_c_vectors.to(gen_cls_hidden_state.device)
+            # all_q_vectors = all_q_vectors.to(disc_cls_hidden_state.device)
+            # all_c_vectors = all_c_vectors.to(gen_cls_hidden_state.device)
 
             # Create a tensor index for the local rank
             for i in range(distributed_world_size):
@@ -316,11 +310,11 @@ class AMCLR(ElectraForPreTraining):
                     all_q_vectors[i] = disc_cls_hidden_state
                     all_c_vectors[i] = gen_cls_hidden_state
                 else:
-                    all_q_vectors[i] = all_q_vectors[i]
-                    all_c_vectors[i] = all_c_vectors[i]
+                    all_q_vectors[i] = all_q_vectors[i].to(disc_cls_hidden_state.device)
+                    all_c_vectors[i] = all_c_vectors[i].to(disc_cls_hidden_state.device)
 
-            global_disc_cls_hidden_state = all_q_vectors.view(-1, disc_cls_hidden_state.size(-1))  # Shape: [world_size * word_size * batch_size, dim]
-            global_gen_cls_hidden_state = all_c_vectors.view(-1, gen_cls_hidden_state.size(-1))    # Shape: [world_size * word_size * batch_size, dim]
+            global_disc_cls_hidden_state = all_q_vectors.view(-1, disc_cls_hidden_state.size(-1))  # Shape: [word_size * batch_size, dim]
+            global_gen_cls_hidden_state = all_c_vectors.view(-1, gen_cls_hidden_state.size(-1))    # Shape: [word_size * batch_size, dim]
             
         else:
             global_disc_cls_hidden_state = disc_cls_hidden_state
