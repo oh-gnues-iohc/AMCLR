@@ -292,8 +292,8 @@ class AMCLR(ElectraForPreTraining):
         # xm.mark_step()
         
         if distributed_world_size > 1:
-            q_vector_to_send = torch.empty_like(disc_cls_hidden_state).cpu().copy_(disc_cls_hidden_state).detach_()
-            ctx_vector_to_send = torch.empty_like(gen_cls_hidden_state).cpu().copy_(gen_cls_hidden_state).detach_()
+            q_vector_to_send = torch.empty_like(disc_cls_hidden_state).copy_(disc_cls_hidden_state).detach_()
+            ctx_vector_to_send = torch.empty_like(gen_cls_hidden_state).copy_(gen_cls_hidden_state).detach_()
 
             global_disc_cls_hidden_state = []
             global_gen_cls_hidden_state = []
