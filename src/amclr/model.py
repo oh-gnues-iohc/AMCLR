@@ -331,7 +331,7 @@ class AMCLR(ElectraForPreTraining):
             disc_loss = loss_fct(logits.view(-1, discriminator_sequence_output.shape[1]), labels.float())
             
             masked_loss = disc_loss * attention_mask
-            disc_loss = (masked_loss.sum() / attention_mask.sum()) * self.l1
+            disc_loss = (masked_loss.sum(dim=1) / attention_mask.sum(dim=1)).mean() * self.l1
                                     
             scores = torch.matmul(global_disc_cls_hidden_state, torch.transpose(global_gen_cls_hidden_state, 0, 1))
 
