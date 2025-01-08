@@ -156,16 +156,13 @@ def main(rank):
     train_device_loader = pl.MpDeviceLoader(train_loader, device, loader_prefetch_size=128, device_prefetch_size=64, host_to_device_transfer_threads=16)
     
     from tqdm import tqdm
-    gloabl_batch = 0
     loss = 0.0
     progress_bar = tqdm(range(training_args.max_steps), disable=not xm.is_master_ordinal(local=False))
     for epoch in range(0, num_train_epochs):
         model.train()
         for step, batch in enumerate(train_device_loader):
             optimizer.zero_grad()
-            outputs = model(**batch)
-            loss = outputs[0]
-            gloabl_batch = outputs[1]
+            loss, dics_loss, sims_loss = model(**batch)
             loss.backward()
             xm.optimizer_step(optimizer, barrier=True)
             lr_scheduler.step()
@@ -202,7 +199,7 @@ def main(rank):
                 if xm.is_master_ordinal(local=False):
                     current_lr = optimizer.param_groups[0]["lr"]
                     loss = loss.detach().to("cpu").item()
-                    wandb.log({"loss": loss, "lr": current_lr, "gloabl_batch": gloabl_batch}, step=global_step)
+                    wandb.log({"loss": loss, "lr": current_lr, "dics_loss": dics_loss, "sims_loss": sims_loss}, step=global_step)
                     # progress_bar.set_postfix({"loss": loss, "gloabl_batch": gloabl_batch, "global_step": global_step})
             
             if global_step >= training_args.max_steps:

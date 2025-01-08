@@ -224,7 +224,7 @@ class AMCLR(ElectraForPreTraining):
         
         self.cls_representation = nn.Linear(config.hidden_size, self.generator.config.hidden_size)
         self.l1 = 50
-        self.l2 = 1
+        self.l2 = 0.5
 
         self.post_init()
 
@@ -286,9 +286,17 @@ class AMCLR(ElectraForPreTraining):
         group = get_global_group()
         distributed_world_size = get_world_size(group)
         local_rank = get_rank(group)
-        disc_cls_hidden_state = self.cls_representation(discriminator_sequence_output[:, 0, :])
-        gen_cls_hidden_state = generator_sequence_output[:, 0, :]
         
+        
+        
+        disc_cls_hidden_state = self.cls_representation(discriminator_sequence_output)
+        gen_cls_hidden_state = generator_sequence_output
+        
+        input_mask_expanded = (
+            attention_mask.unsqueeze(-1).expand(disc_cls_hidden_state.size()).to(disc_cls_hidden_state.dtype)
+        )
+        disc_cls_hidden_state = torch.sum(disc_cls_hidden_state * input_mask_expanded, 1) / torch.clamp(input_mask_expanded.sum(1), min=1e-9)
+        gen_cls_hidden_state = torch.sum(gen_cls_hidden_state * input_mask_expanded, 1) / torch.clamp(input_mask_expanded.sum(1), min=1e-9)
         # xm.mark_step()
         
         if distributed_world_size > 1:
@@ -331,7 +339,7 @@ class AMCLR(ElectraForPreTraining):
             disc_loss = loss_fct(logits.view(-1, discriminator_sequence_output.shape[1]), labels.float())
             
             masked_loss = disc_loss * attention_mask
-            disc_loss = (masked_loss.sum(dim=1) / attention_mask.sum(dim=1)).mean() * self.l1
+            disc_loss = (masked_loss.sum() / attention_mask.sum()) * self.l1
                                     
             scores = torch.matmul(global_disc_cls_hidden_state, torch.transpose(global_gen_cls_hidden_state, 0, 1))
 
@@ -340,4 +348,4 @@ class AMCLR(ElectraForPreTraining):
             
         loss = disc_loss + sims_loss
         output = (global_disc_cls_hidden_state.size(0),)
-        return ((loss,) + output) if loss is not None else output
+        return loss, disc_loss, sims_loss
