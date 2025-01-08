@@ -298,8 +298,8 @@ class AMCLR(ElectraForPreTraining):
             global_disc_cls_hidden_state = []
             global_gen_cls_hidden_state = []
             
-            all_q_vectors = all_gather(q_vector_to_send, return_tensor=False) # word_size, batch_size, dim
-            all_c_vectors = all_gather(ctx_vector_to_send, return_tensor=False) # word_size, batch_size, dim
+            all_q_vectors = all_gather(q_vector_to_send, return_tensor=True) # word_size, batch_size, dim
+            all_c_vectors = all_gather(ctx_vector_to_send, return_tensor=True) # word_size, batch_size, dim
             
             # all_q_vectors = all_q_vectors.to(disc_cls_hidden_state.device)
             # all_c_vectors = all_c_vectors.to(gen_cls_hidden_state.device)
