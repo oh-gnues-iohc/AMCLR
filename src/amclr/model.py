@@ -339,7 +339,7 @@ class AMCLR(ElectraForPreTraining):
 
             sims_loss = F.nll_loss(
             softmax_scores,
-            torch.tensor(positive_idx_per_question).to(softmax_scores.device),
+            positive_idx_per_question,
             reduction="mean",
             ) * self.l2
             
