@@ -298,8 +298,8 @@ class AMCLR(ElectraForPreTraining):
             global_disc_cls_hidden_state = []
             global_gen_cls_hidden_state = []
             
-            all_q_vectors = all_gather(q_vector_to_send, return_tensor=True) # word_size, batch_size, dim
-            all_c_vectors = all_gather(ctx_vector_to_send, return_tensor=True) # word_size, batch_size, dim
+            all_q_vectors = all_gather(q_vector_to_send, return_tensor=False) # word_size, batch_size, dim
+            all_c_vectors = all_gather(ctx_vector_to_send, return_tensor=False) # word_size, batch_size, dim
             
             # all_q_vectors = all_q_vectors.to(disc_cls_hidden_state.device)
             # all_c_vectors = all_c_vectors.to(gen_cls_hidden_state.device)
@@ -307,14 +307,13 @@ class AMCLR(ElectraForPreTraining):
             # Create a tensor index for the local rank
             for i in range(distributed_world_size):
                 if i == local_rank:
-                    all_q_vectors[i] = disc_cls_hidden_state
-                    all_c_vectors[i] = gen_cls_hidden_state
+                    global_disc_cls_hidden_state.append(disc_cls_hidden_state)
+                    global_gen_cls_hidden_state.append(gen_cls_hidden_state)
                 else:
-                    all_q_vectors[i] = all_q_vectors[i].to(disc_cls_hidden_state.device)
-                    all_c_vectors[i] = all_c_vectors[i].to(disc_cls_hidden_state.device)
-
-            global_disc_cls_hidden_state = all_q_vectors.view(-1, disc_cls_hidden_state.size(-1))  # Shape: [word_size * batch_size, dim]
-            global_gen_cls_hidden_state = all_c_vectors.view(-1, gen_cls_hidden_state.size(-1))    # Shape: [word_size * batch_size, dim]
+                    global_disc_cls_hidden_state.append(all_q_vectors[i].to(disc_cls_hidden_state.device))
+                    global_gen_cls_hidden_state.append(all_c_vectors[i].to(disc_cls_hidden_state.device))
+            global_disc_cls_hidden_state = torch.cat(global_disc_cls_hidden_state, dim=0)
+            global_gen_cls_hidden_state = torch.cat(global_gen_cls_hidden_state, dim=0)
             
         else:
             global_disc_cls_hidden_state = disc_cls_hidden_state
@@ -336,8 +335,13 @@ class AMCLR(ElectraForPreTraining):
             disc_loss = (masked_loss.sum() / attention_mask.sum()) * self.l1
                                     
             scores = torch.matmul(global_disc_cls_hidden_state, torch.transpose(global_gen_cls_hidden_state, 0, 1))
+            softmax_scores = F.log_softmax(scores, dim=1)
 
-            sims_loss = F.cross_entropy(scores, positive_idx_per_question) * self.l2
+            sims_loss = F.nll_loss(
+            softmax_scores,
+            torch.tensor(positive_idx_per_question).to(softmax_scores.device),
+            reduction="mean",
+            ) * self.l2
             
             
         loss = disc_loss + sims_loss
