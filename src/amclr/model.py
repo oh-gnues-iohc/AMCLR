@@ -318,7 +318,7 @@ class AMCLR(ElectraForPreTraining):
         self.special_token_ids = special_token_ids
         self.generator = AMCLRMLM(config2, special_token_ids)
         
-        self.cls_representation = nn.Linear(config.hidden_size, self.generator.config.hidden_size)
+        self.cls_representation = nn.Linear(config.hidden_size, config2.hidden_size)
         self.l1 = 50
         self.l2 = 1
 
