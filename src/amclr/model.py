@@ -64,9 +64,9 @@ def all_gather(tensor, group=None, return_tensor=False):
 
 
 
-class TempElectraModel(nn.Module):
+class TempElectraModel(ElectraPreTrainedModel):
     def __init__(self, config):
-        super().__init__()
+        super().__init__(config)
 
         if config.embedding_size != config.hidden_size:
             self.embeddings_project = nn.Linear(config.embedding_size, config.hidden_size)
