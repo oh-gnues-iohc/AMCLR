@@ -223,7 +223,7 @@ class AMCLRMLM(nn.Module):
         # cond=True 인 위치에 -inf를 할당하고, 나머지는 기존 mask 값을 둠
         mask = torch.where(
             one_hot_ids, 
-            torch.tensor(torch.finfo(self.dtype).min, device=mask.device), 
+            torch.tensor(torch.finfo(similarity.dtype).min, device=mask.device), 
             mask
         )
 
@@ -243,7 +243,7 @@ class AMCLRMLM(nn.Module):
 
         mask = torch.where(
             total_range_mask,
-            torch.tensor(torch.finfo(self.dtype).min, device=mask.device),
+            torch.tensor(torch.finfo(similarity.dtype).min, device=mask.device),
             mask
         )
 
@@ -255,7 +255,7 @@ class AMCLRMLM(nn.Module):
         # 역시 torch.where로 대체
         # --------------------------------------------------------------------------------
         batch_size, seq_len, hidden_dim = generator_sequence_output.shape
-        special_tokens = torch.tensor(self.special_token_ids, device=self.device)
+        special_tokens = torch.tensor(self.special_token_ids, device=similarity.device)
         is_special = (input_ids.unsqueeze(-1) == special_tokens).any(dim=-1)
         non_special_mask = (~is_special).float()
 
@@ -271,7 +271,7 @@ class AMCLRMLM(nn.Module):
         score_mask = torch.zeros_like(scores)  # [batch_size, seq_len]
         score_mask = torch.where(
             invalid_tokens.bool(),
-            torch.tensor(torch.finfo(self.dtype).min, device=score_mask.device),
+            torch.tensor(torch.finfo(similarity.dtype).min, device=score_mask.device),
             score_mask
         )
 
