@@ -170,6 +170,7 @@ class AMCLRMLM(nn.Module):
         self.special_token_ids = special_token_ids
         self.masking_ratio = 0.15
         self.temperature = 0.3
+        self.electra = TempElectraModel(config)
         self.generator_score_head = nn.Linear(config.embedding_size, 1)
 
     def forward(
