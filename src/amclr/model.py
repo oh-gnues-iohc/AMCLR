@@ -64,18 +64,117 @@ def all_gather(tensor, group=None, return_tensor=False):
 
 
 
+class TempElectraModel(nn.Module):
+    def __init__(self, config):
+        super().__init__()
 
-class AMCLRMLM(ElectraForMaskedLM):
+        if config.embedding_size != config.hidden_size:
+            self.embeddings_project = nn.Linear(config.embedding_size, config.hidden_size)
+
+        self.encoder = ElectraEncoder(config)
+        self.config = config
+        
+    def forward(
+        self,
+        embeddings: None,
+        input_ids: Optional[torch.Tensor] = None,
+        attention_mask: Optional[torch.Tensor] = None,
+        token_type_ids: Optional[torch.Tensor] = None,
+        position_ids: Optional[torch.Tensor] = None,
+        head_mask: Optional[torch.Tensor] = None,
+        inputs_embeds: Optional[torch.Tensor] = None,
+        encoder_hidden_states: Optional[torch.Tensor] = None,
+        encoder_attention_mask: Optional[torch.Tensor] = None,
+        past_key_values: Optional[List[torch.FloatTensor]] = None,
+        use_cache: Optional[bool] = None,
+        output_attentions: Optional[bool] = None,
+        output_hidden_states: Optional[bool] = None,
+        return_dict: Optional[bool] = None,
+    ) -> Union[Tuple[torch.Tensor], BaseModelOutputWithCrossAttentions]:
+        output_attentions = output_attentions if output_attentions is not None else self.config.output_attentions
+        output_hidden_states = (
+            output_hidden_states if output_hidden_states is not None else self.config.output_hidden_states
+        )
+        return_dict = return_dict if return_dict is not None else self.config.use_return_dict
+
+        if input_ids is not None and inputs_embeds is not None:
+            raise ValueError("You cannot specify both input_ids and inputs_embeds at the same time")
+        elif input_ids is not None:
+            self.warn_if_padding_and_no_attention_mask(input_ids, attention_mask)
+            input_shape = input_ids.size()
+        elif inputs_embeds is not None:
+            input_shape = inputs_embeds.size()[:-1]
+        else:
+            raise ValueError("You have to specify either input_ids or inputs_embeds")
+
+        batch_size, seq_length = input_shape
+        device = input_ids.device if input_ids is not None else inputs_embeds.device
+
+        # past_key_values_length
+        past_key_values_length = past_key_values[0][0].shape[2] if past_key_values is not None else 0
+
+        if attention_mask is None:
+            attention_mask = torch.ones(input_shape, device=device)
+        if token_type_ids is None:
+            if hasattr(embeddings, "token_type_ids"):
+                buffered_token_type_ids = embeddings.token_type_ids[:, :seq_length]
+                buffered_token_type_ids_expanded = buffered_token_type_ids.expand(batch_size, seq_length)
+                token_type_ids = buffered_token_type_ids_expanded
+            else:
+                token_type_ids = torch.zeros(input_shape, dtype=torch.long, device=device)
+
+        extended_attention_mask = self.get_extended_attention_mask(attention_mask, input_shape)
+
+        # If a 2D or 3D attention mask is provided for the cross-attention
+        # we need to make broadcastable to [batch_size, num_heads, seq_length, seq_length]
+        if self.config.is_decoder and encoder_hidden_states is not None:
+            encoder_batch_size, encoder_sequence_length, _ = encoder_hidden_states.size()
+            encoder_hidden_shape = (encoder_batch_size, encoder_sequence_length)
+            if encoder_attention_mask is None:
+                encoder_attention_mask = torch.ones(encoder_hidden_shape, device=device)
+            encoder_extended_attention_mask = self.invert_attention_mask(encoder_attention_mask)
+        else:
+            encoder_extended_attention_mask = None
+
+        head_mask = self.get_head_mask(head_mask, self.config.num_hidden_layers)
+
+        hidden_states = embeddings(
+            input_ids=input_ids,
+            position_ids=position_ids,
+            token_type_ids=token_type_ids,
+            inputs_embeds=inputs_embeds,
+            past_key_values_length=past_key_values_length,
+        )
+
+        if hasattr(self, "embeddings_project"):
+            hidden_states = self.embeddings_project(hidden_states)
+
+        hidden_states = self.encoder(
+            hidden_states,
+            attention_mask=extended_attention_mask,
+            head_mask=head_mask,
+            encoder_hidden_states=encoder_hidden_states,
+            encoder_attention_mask=encoder_extended_attention_mask,
+            past_key_values=past_key_values,
+            use_cache=use_cache,
+            output_attentions=output_attentions,
+            output_hidden_states=output_hidden_states,
+            return_dict=return_dict,
+        )
+
+        return hidden_states
+
+class AMCLRMLM(nn.Module):
     def __init__(self, config, special_token_ids):
-        super().__init__(config)
+        super().__init__()
         self.special_token_ids = special_token_ids
         self.masking_ratio = 0.15
         self.temperature = 0.3
         self.generator_score_head = nn.Linear(config.embedding_size, 1)
-        self.post_init()
 
     def forward(
         self,
+        embeddings = None,
         input_ids: Optional[torch.Tensor] = None,
         attention_mask: Optional[torch.Tensor] = None,
         token_type_ids: Optional[torch.Tensor] = None,
@@ -91,6 +190,7 @@ class AMCLRMLM(ElectraForMaskedLM):
 
         # ELECTRA Encoding
         generator_hidden_states = self.electra(
+            embeddings,
             input_ids,
             attention_mask=attention_mask,
             token_type_ids=token_type_ids,
@@ -211,16 +311,11 @@ def grad_multiply(x, lambd=-1):
 
 class AMCLR(ElectraForPreTraining):
 
-    def __init__(self, config, special_token_ids, generator):
+    def __init__(self, config, config2, special_token_ids):
         super().__init__(config)
         self.config = config
         self.special_token_ids = special_token_ids
-        self.generator = generator
-        self.set_input_embeddings(self.generator.get_input_embeddings())
-        
-        self.electra.embeddings.position_embeddings = self.generator.electra.embeddings.position_embeddings
-        self.electra.embeddings.token_type_embeddings = self.generator.electra.embeddings.token_type_embeddings
-        self.electra.embeddings.LayerNorm = self.generator.electra.embeddings.LayerNorm
+        self.generator = AMCLRMLM(config2, special_token_ids)
         
         self.cls_representation = nn.Linear(config.hidden_size, self.generator.config.hidden_size)
         self.l1 = 50
@@ -245,6 +340,7 @@ class AMCLR(ElectraForPreTraining):
         return_dict = return_dict if return_dict is not None else self.config.use_return_dict
         
         probs, generator_sequence_output, labels = self.generator(
+            self.get_input_embeddings(),
             input_ids,
             attention_mask=attention_mask,
             token_type_ids=token_type_ids,
