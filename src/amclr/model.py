@@ -341,7 +341,7 @@ class AMCLR(ElectraForPreTraining):
         return_dict = return_dict if return_dict is not None else self.config.use_return_dict
         
         probs, generator_sequence_output, labels = self.generator(
-            self.get_input_embeddings(),
+            self.electra.embeddings,
             input_ids,
             attention_mask=attention_mask,
             token_type_ids=token_type_ids,
