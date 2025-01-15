@@ -172,6 +172,9 @@ class AMCLRMLM(nn.Module):
         self.temperature = 0.3
         self.electra = TempElectraModel(config)
         self.generator_score_head = nn.Linear(config.embedding_size, 1)
+        self.generator_predictions = ElectraGeneratorPredictions(config)
+
+        self.generator_lm_head = nn.Linear(config.embedding_size, config.vocab_size)
 
     def forward(
         self,
