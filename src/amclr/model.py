@@ -73,6 +73,7 @@ class TempElectraModel(ElectraPreTrainedModel):
 
         self.encoder = ElectraEncoder(config)
         self.config = config
+        self.post_init()
         
     def forward(
         self,
