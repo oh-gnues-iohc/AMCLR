@@ -64,20 +64,41 @@ def all_gather(tensor, group=None, return_tensor=False):
 
 
 
-class TempElectraModel(ElectraPreTrainedModel):
+class ElectraModel(ElectraPreTrainedModel):
     def __init__(self, config):
         super().__init__(config)
+        self.embeddings = ElectraEmbeddings(config)
 
         if config.embedding_size != config.hidden_size:
             self.embeddings_project = nn.Linear(config.embedding_size, config.hidden_size)
 
         self.encoder = ElectraEncoder(config)
         self.config = config
+        # Initialize weights and apply final processing
         self.post_init()
-        
+
+    def get_input_embeddings(self):
+        return self.embeddings.word_embeddings
+
+    def set_input_embeddings(self, value):
+        self.embeddings.word_embeddings = value
+
+    def _prune_heads(self, heads_to_prune):
+        """
+        Prunes heads of the model. heads_to_prune: dict of {layer_num: list of heads to prune in this layer} See base
+        class PreTrainedModel
+        """
+        for layer, heads in heads_to_prune.items():
+            self.encoder.layer[layer].attention.prune_heads(heads)
+
+    @add_start_docstrings_to_model_forward(ELECTRA_INPUTS_DOCSTRING.format("batch_size, sequence_length"))
+    @add_code_sample_docstrings(
+        checkpoint=_CHECKPOINT_FOR_DOC,
+        output_type=BaseModelOutputWithCrossAttentions,
+        config_class=_CONFIG_FOR_DOC,
+    )
     def forward(
         self,
-        embeddings: None,
         input_ids: Optional[torch.Tensor] = None,
         attention_mask: Optional[torch.Tensor] = None,
         token_type_ids: Optional[torch.Tensor] = None,
@@ -117,8 +138,8 @@ class TempElectraModel(ElectraPreTrainedModel):
         if attention_mask is None:
             attention_mask = torch.ones(input_shape, device=device)
         if token_type_ids is None:
-            if hasattr(embeddings, "token_type_ids"):
-                buffered_token_type_ids = embeddings.token_type_ids[:, :seq_length]
+            if hasattr(self.embeddings, "token_type_ids"):
+                buffered_token_type_ids = self.embeddings.token_type_ids[:, :seq_length]
                 buffered_token_type_ids_expanded = buffered_token_type_ids.expand(batch_size, seq_length)
                 token_type_ids = buffered_token_type_ids_expanded
             else:
@@ -139,7 +160,7 @@ class TempElectraModel(ElectraPreTrainedModel):
 
         head_mask = self.get_head_mask(head_mask, self.config.num_hidden_layers)
 
-        hidden_states = embeddings(
+        hidden_states = self.embeddings(
             input_ids=input_ids,
             position_ids=position_ids,
             token_type_ids=token_type_ids,
@@ -165,21 +186,17 @@ class TempElectraModel(ElectraPreTrainedModel):
 
         return hidden_states
 
-class AMCLRMLM(nn.Module):
+class AMCLRMLM(ElectraForMaskedLM):
     def __init__(self, config, special_token_ids):
-        super().__init__()
+        super().__init__(config)
         self.special_token_ids = special_token_ids
         self.masking_ratio = 0.15
         self.temperature = 0.3
-        self.electra = TempElectraModel(config)
         self.generator_score_head = nn.Linear(config.embedding_size, 1)
-        self.generator_predictions = ElectraGeneratorPredictions(config)
-
-        self.generator_lm_head = nn.Linear(config.embedding_size, config.vocab_size)
+        self.post_init()
 
     def forward(
         self,
-        embeddings = None,
         input_ids: Optional[torch.Tensor] = None,
         attention_mask: Optional[torch.Tensor] = None,
         token_type_ids: Optional[torch.Tensor] = None,
@@ -195,7 +212,6 @@ class AMCLRMLM(nn.Module):
 
         # ELECTRA Encoding
         generator_hidden_states = self.electra(
-            embeddings,
             input_ids,
             attention_mask=attention_mask,
             token_type_ids=token_type_ids,
@@ -224,7 +240,7 @@ class AMCLRMLM(nn.Module):
         # cond=True 인 위치에 -inf를 할당하고, 나머지는 기존 mask 값을 둠
         mask = torch.where(
             one_hot_ids, 
-            torch.tensor(torch.finfo(similarity.dtype).min, device=mask.device), 
+            torch.tensor(torch.finfo(self.dtype).min, device=mask.device), 
             mask
         )
 
@@ -244,7 +260,7 @@ class AMCLRMLM(nn.Module):
 
         mask = torch.where(
             total_range_mask,
-            torch.tensor(torch.finfo(similarity.dtype).min, device=mask.device),
+            torch.tensor(torch.finfo(self.dtype).min, device=mask.device),
             mask
         )
 
@@ -256,7 +272,7 @@ class AMCLRMLM(nn.Module):
         # 역시 torch.where로 대체
         # --------------------------------------------------------------------------------
         batch_size, seq_len, hidden_dim = generator_sequence_output.shape
-        special_tokens = torch.tensor(self.special_token_ids, device=similarity.device)
+        special_tokens = torch.tensor(self.special_token_ids, device=self.device)
         is_special = (input_ids.unsqueeze(-1) == special_tokens).any(dim=-1)
         non_special_mask = (~is_special).float()
 
@@ -272,7 +288,7 @@ class AMCLRMLM(nn.Module):
         score_mask = torch.zeros_like(scores)  # [batch_size, seq_len]
         score_mask = torch.where(
             invalid_tokens.bool(),
-            torch.tensor(torch.finfo(similarity.dtype).min, device=score_mask.device),
+            torch.tensor(torch.finfo(self.dtype).min, device=score_mask.device),
             score_mask
         )
 
@@ -316,17 +332,21 @@ def grad_multiply(x, lambd=-1):
 
 class AMCLR(ElectraForPreTraining):
 
-    def __init__(self, config, config2, special_token_ids):
+    def __init__(self, config, special_token_ids, generator):
         super().__init__(config)
         self.config = config
         self.special_token_ids = special_token_ids
-        self.generator = AMCLRMLM(config2, special_token_ids)
+        self.generator = generator
+        # self.electra.embeddings.LayerNorm = self.generator.electra.embeddings.LayerNorm
         
-        self.cls_representation = nn.Linear(config.hidden_size, config2.hidden_size)
+        self.cls_representation = nn.Linear(config.hidden_size, self.generator.config.hidden_size)
         self.l1 = 50
         self.l2 = 1
 
         self.post_init()
+        self.electra.embeddings.word_embeddings.weight = self.generator.electra.embeddings.word_embeddings.weight
+        self.electra.embeddings.position_embeddings.weight = self.generator.electra.embeddings.position_embeddings.weight
+        self.electra.embeddings.token_type_embeddings.weight = self.generator.electra.embeddings.token_type_embeddings.weight
 
 
     def forward(
@@ -345,7 +365,6 @@ class AMCLR(ElectraForPreTraining):
         return_dict = return_dict if return_dict is not None else self.config.use_return_dict
         
         probs, generator_sequence_output, labels = self.generator(
-            self.electra.embeddings,
             input_ids,
             attention_mask=attention_mask,
             token_type_ids=token_type_ids,

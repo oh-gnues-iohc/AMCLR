@@ -100,12 +100,13 @@ def main(rank):
     tokenizer = AutoTokenizer.from_pretrained(disc_config_path)
 
     # Initialize models
-    disc = disc_model(ElectraConfig.from_pretrained(disc_config_path), ElectraConfig.from_pretrained(gen_config_path), tokenizer.all_special_ids)
+    gen = gen_model(ElectraConfig.from_pretrained(gen_config_path), tokenizer.all_special_ids)
+    disc = disc_model(ElectraConfig.from_pretrained(disc_config_path), tokenizer.all_special_ids, gen)
 
     trainer = Trainer(
         model=disc,
-        tokenizer=tokenizer,
         args=training_args,
+        tokenizer=tokenizer,
         train_dataset=datasets
     )
 
