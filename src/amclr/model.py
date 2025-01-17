@@ -350,3 +350,36 @@ class AMCLR(ElectraForPreTraining):
         output = (global_disc_cls_hidden_state.size(0),)
         # return loss, disc_loss, sims_loss
         return (loss, ) + output
+    
+    def save_pretrained(
+        self,
+        save_directory: Union[str, os.PathLike],
+        is_main_process: bool = True,
+        state_dict: Optional[dict] = None,
+        save_function: Callable = torch.save,
+        push_to_hub: bool = False,
+        max_shard_size: Union[int, str] = "5GB",
+        safe_serialization: bool = True,
+        variant: Optional[str] = None,
+        token: Optional[Union[str, bool]] = None,
+        save_peft_format: bool = True,
+        **kwargs,
+    ):
+        import os
+        disc_path = os.path.join(save_directory, "disc")
+        gen_path = os.path.join(save_directory, "gen")
+        
+        self.electra.save_pretrained(
+            disc_path,
+            is_main_process=is_main_process,
+            state_dict=xm._maybe_convert_to_cpu(self.electra.state_dict()),
+            save_function=save_function,
+            safe_serialization=safe_serialization,
+        )
+        self.gen.save_pretrained(
+            gen_path,
+            is_main_process=is_main_process,
+            state_dict=xm._maybe_convert_to_cpu(self.gen.state_dict()),
+            save_function=save_function,
+            safe_serialization=safe_serialization,
+        )
