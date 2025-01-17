@@ -165,14 +165,14 @@ class AMCLRMLM(ElectraForMaskedLM):
         # invalid_tokens 구하기
         invalid_tokens = (valid_tokens == 0)  # True인 곳이 invalid
 
-        score_mask = torch.zeros_like(scores)  # [batch_size, seq_len]
-        score_mask = torch.where(
+        # score_mask = torch.zeros_like(scores)  # [batch_size, seq_len]
+        masked_scores = torch.where(
             invalid_tokens.bool(),
-            torch.tensor(torch.finfo(self.dtype).min, device=score_mask.device),
-            score_mask
+            torch.tensor(torch.finfo(self.dtype).min, device=scores.device),
+            scores
         )
 
-        masked_scores = scores + score_mask  # [batch_size, seq_len]
+        # masked_scores = scores + score_mask  # [batch_size, seq_len]
 
         # Gumbel-Softmax
         y_soft = F.gumbel_softmax(masked_scores, hard=False, dim=-1)  # [batch_size, seq_len]
