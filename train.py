@@ -104,18 +104,12 @@ def main(rank):
     # Initialize models
     
     
-    def create_shared_embeddings(config):
-        shared_word_embeddings = nn.Embedding(config.vocab_size, config.embedding_size)
-        shared_position_embeddings = nn.Embedding(config.max_position_embeddings, config.embedding_size)
-        return {
-            "word_embeddings": shared_word_embeddings,
-            "position_embeddings": shared_position_embeddings,
-        }
-
-    shared_embeddings = create_shared_embeddings(ElectraConfig.from_pretrained(disc_config_path))
     
-    gen = gen_model(ElectraConfig.from_pretrained(gen_config_path), tokenizer.all_special_ids, shared_embeddings=shared_embeddings)
-    disc = disc_model(ElectraConfig.from_pretrained(disc_config_path), tokenizer.all_special_ids, gen, shared_embeddings=shared_embeddings)
+    gen = gen_model(ElectraConfig.from_pretrained(gen_config_path), tokenizer.all_special_ids, shared_embeddings=None)
+    disc = disc_model(ElectraConfig.from_pretrained(disc_config_path), tokenizer.all_special_ids, gen, shared_embeddings={
+            "word_embeddings": gen.electra.embeddings.word_embeddings,
+            "position_embeddings": gen.electra.embeddings.position_embeddings,
+        })
     
     
     

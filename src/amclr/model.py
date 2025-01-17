@@ -376,10 +376,10 @@ class AMCLR(ElectraForPreTraining):
             save_function=save_function,
             safe_serialization=safe_serialization,
         )
-        self.gen.save_pretrained(
+        self.generator.save_pretrained(
             gen_path,
             is_main_process=is_main_process,
-            state_dict=xm._maybe_convert_to_cpu(self.gen.state_dict()),
+            state_dict=xm._maybe_convert_to_cpu(self.generator.state_dict()),
             save_function=save_function,
             safe_serialization=safe_serialization,
         )
