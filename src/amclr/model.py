@@ -64,12 +64,15 @@ def all_gather(tensor, group=None, return_tensor=False):
 
 
 class AMCLRMLM(ElectraForMaskedLM):
-    def __init__(self, config, special_token_ids):
+    def __init__(self, config, special_token_ids, shared_embeddings=None):
         super().__init__(config)
         self.special_token_ids = special_token_ids
         self.masking_ratio = 0.15
         self.temperature = 0.3
         self.generator_score_head = nn.Linear(config.embedding_size, 1)
+        if shared_embeddings:
+            self.electra.embeddings.word_embeddings = shared_embeddings['word_embeddings']
+            self.electra.embeddings.position_embeddings = shared_embeddings['position_embeddings']
         self.post_init()
 
     def forward(
@@ -209,20 +212,18 @@ def grad_multiply(x, lambd=-1):
 
 class AMCLR(ElectraForPreTraining):
 
-    def __init__(self, config, special_token_ids, generator):
+    def __init__(self, config, special_token_ids, generator, shared_embeddings=None):
         super().__init__(config)
         self.config = config
         self.special_token_ids = special_token_ids
-        self.generator = generator
+        self.generator = generator #AMCLRMLM
+        if shared_embeddings:
+            self.electra.embeddings.word_embeddings = shared_embeddings['word_embeddings']
+            self.electra.embeddings.position_embeddings = shared_embeddings['position_embeddings']
         
         self.cls_representation = nn.Linear(config.hidden_size, self.generator.config.hidden_size)
         self.l1 = 50
         self.l2 = 1
-
-        self.set_input_embeddings(self.generator.get_input_embeddings())
-
-        self.electra.embeddings.position_embeddings = self.generator.electra.embeddings.position_embeddings
-        self.electra.embeddings.token_type_embeddings = self.generator.electra.embeddings.token_type_embeddings
         
         self.post_init()
 

@@ -8,9 +8,11 @@ from datasets import Dataset
 from dataclasses import dataclass, field
 import torch.distributed as dist
 from typing import Optional
+import torch.nn as nn
 
 import torch_xla
 import torch_xla.runtime as xr
+import torch_xla.core.xla_model as xm
 
 
 from datasets import load_dataset, load_from_disk
@@ -100,9 +102,25 @@ def main(rank):
     tokenizer = AutoTokenizer.from_pretrained(disc_config_path)
 
     # Initialize models
-    gen = gen_model(ElectraConfig.from_pretrained(gen_config_path), tokenizer.all_special_ids)
-    disc = disc_model(ElectraConfig.from_pretrained(disc_config_path), tokenizer.all_special_ids, gen)
+    
+    
+    def create_shared_embeddings(config):
+        shared_word_embeddings = nn.Embedding(config.vocab_size, config.embedding_size)
+        shared_position_embeddings = nn.Embedding(config.max_position_embeddings, config.embedding_size)
+        return {
+            "word_embeddings": shared_word_embeddings,
+            "position_embeddings": shared_position_embeddings,
+        }
 
+    shared_embeddings = create_shared_embeddings(ElectraConfig.from_pretrained(disc_config_path))
+    
+    gen = gen_model(ElectraConfig.from_pretrained(gen_config_path), tokenizer.all_special_ids, shared_embeddings=shared_embeddings)
+    disc = disc_model(ElectraConfig.from_pretrained(disc_config_path), tokenizer.all_special_ids, gen, shared_embeddings=shared_embeddings)
+    
+    
+    
+    xm.broadcast_master_param(disc)
+    
     trainer = Trainer(
         model=disc,
         args=training_args,
