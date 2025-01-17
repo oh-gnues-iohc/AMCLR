@@ -214,16 +214,17 @@ class AMCLR(ElectraForPreTraining):
         self.config = config
         self.special_token_ids = special_token_ids
         self.generator = generator
-        # self.electra.embeddings.LayerNorm = self.generator.electra.embeddings.LayerNorm
         
         self.cls_representation = nn.Linear(config.hidden_size, self.generator.config.hidden_size)
         self.l1 = 50
         self.l2 = 1
 
+        self.set_input_embeddings(self.generator.get_input_embeddings())
+
+        self.electra.embeddings.position_embeddings = self.generator.electra.embeddings.position_embeddings
+        self.electra.embeddings.token_type_embeddings = self.generator.electra.embeddings.token_type_embeddings
+        
         self.post_init()
-        self.electra.embeddings.word_embeddings.weight = self.generator.electra.embeddings.word_embeddings.weight
-        self.electra.embeddings.position_embeddings.weight = self.generator.electra.embeddings.position_embeddings.weight
-        self.electra.embeddings.token_type_embeddings.weight = self.generator.electra.embeddings.token_type_embeddings.weight
 
 
     def forward(
