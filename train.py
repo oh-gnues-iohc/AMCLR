@@ -113,7 +113,7 @@ def main(rank):
     
     
     
-    xm.broadcast_master_param(disc)
+    # xm.broadcast_master_param(disc)
     
     trainer = Trainer(
         model=disc,
