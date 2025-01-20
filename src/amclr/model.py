@@ -372,14 +372,14 @@ class AMCLR(ElectraForPreTraining):
         self.electra.save_pretrained(
             disc_path,
             is_main_process=is_main_process,
-            state_dict=self.electra.state_dict(),
+            state_dict=self.electra.state_dict().to("cpu"),
             save_function=save_function,
             safe_serialization=safe_serialization,
         )
         self.generator.save_pretrained(
             gen_path,
             is_main_process=is_main_process,
-            state_dict=self.generator.state_dict(),
+            state_dict=self.generator.state_dict().to("cpu"),
             save_function=save_function,
             safe_serialization=safe_serialization,
         )
