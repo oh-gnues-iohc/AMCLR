@@ -222,7 +222,7 @@ class AMCLR(ElectraForPreTraining):
             self.electra.embeddings.position_embeddings = shared_embeddings['position_embeddings']
         
         self.cls_representation = nn.Linear(config.hidden_size, self.generator.config.hidden_size)
-        self.l1 = 50
+        self.l1 = 25
         self.l2 = 1
         
         self.post_init()
