@@ -110,9 +110,12 @@ def main(rank):
 
     # Initialize models
     device = xm.xla_device()
-    gen = gen_model(ElectraConfig.from_pretrained(gen_config_path), tokenizer.all_special_ids).to(device)
-    model = disc_model(ElectraConfig.from_pretrained(disc_config_path), tokenizer.all_special_ids, gen).to(device)
-
+    gen = gen_model(ElectraConfig.from_pretrained(gen_config_path), tokenizer.all_special_ids, shared_embeddings=None).to(device)
+    disc = disc_model(ElectraConfig.from_pretrained(disc_config_path), tokenizer.all_special_ids, gen, shared_embeddings={
+            "word_embeddings": gen.electra.embeddings.word_embeddings,
+            "position_embeddings": gen.electra.embeddings.position_embeddings,
+        }).to(device)
+    model = disc
     xm.broadcast_master_param(model)
 
     no_decay = ["bias", "LayerNorm.weight"]
@@ -143,7 +146,7 @@ def main(rank):
         shuffle=True)
     train_loader = torch.utils.data.DataLoader(
         datasets,
-        batch_size=16,
+        batch_size=training_args.per_device_train_batch_size,
         sampler=train_sampler,
         drop_last=True,
         collate_fn=DefaultDataCollator(),

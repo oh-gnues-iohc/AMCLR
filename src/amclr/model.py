@@ -347,9 +347,9 @@ class AMCLR(ElectraForPreTraining):
             
             
         loss = disc_loss + sims_loss
-        output = (global_disc_cls_hidden_state.size(0),)
-        # return loss, disc_loss, sims_loss
-        return (loss, ) + output
+        # output = (global_disc_cls_hidden_state.size(0),)
+        return loss, disc_loss, sims_loss
+        # return (loss, ) + output
     
     def save_pretrained(
         self,
