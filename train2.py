@@ -201,8 +201,8 @@ def main(rank):
             if global_step % training_args.logging_steps == 0:
                 if xm.is_master_ordinal(local=False):
                     current_lr = optimizer.param_groups[0]["lr"]
-                    loss = loss.detach().to("cpu").item()
-                    wandb.log({"loss": loss, "lr": current_lr, "dics_loss": dics_loss, "sims_loss": sims_loss}, step=global_step)
+                    # loss = loss.detach().to("cpu").item()
+                    wandb.log({"loss": loss, "lr": current_lr, "dics_loss": dics_loss, "sims_loss": sims_loss}, step=global_step+1)
                     # progress_bar.set_postfix({"loss": loss, "gloabl_batch": gloabl_batch, "global_step": global_step})
             
             if global_step >= training_args.max_steps:
